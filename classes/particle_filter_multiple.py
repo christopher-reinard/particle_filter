@@ -3,6 +3,8 @@ from scipy.optimize import linear_sum_assignment
 from typing import List, Tuple, Literal, Optional, Dict
 from .observation import TransitionModel, ObservationModel
 
+# TODO: Add somehow directional information by inferring from observations?
+
 
 class Particle:
     """
@@ -80,7 +82,8 @@ class SingleBallParticleFilter:
                  transition_model: TransitionModel,
                  observation_model: ObservationModel,
                  init_generator: Literal["PseudoRandom", "Sobol", "LHS"] = "PseudoRandom",
-                 roughening_noise: float = 0.0
+                 roughening_noise: float = 0.0,
+                 velocity_sigma: float = 20.0,
                  ) -> None:
         self.num_particles = num_particles
         self.bounds = state_bounds
@@ -90,6 +93,8 @@ class SingleBallParticleFilter:
         self.observation_model = observation_model
         self.init_generator = init_generator
         self.roughening_noise = roughening_noise
+        self.velocity_sigma = velocity_sigma
+
 
         self.particle_set: ParticleSet = self._initialize()
         self._current_mean: Optional[np.ndarray] = None
@@ -115,26 +120,13 @@ class SingleBallParticleFilter:
         particles = [Particle(state=s, weight=initial_weight) for s in states]
         return ParticleSet(particles)
 
-    def propagate(self) -> None:
-        """Step 3: Move each particle forward via the transition model."""
-        for p in self.particle_set.particles:
-            p.state = self.transition_model.propagate(p.state)
-
-    def evaluate(self, observation: np.ndarray) -> None:
-        """
-        Step 4: Weight each particle by how well it explains this observation.
-        w_t^i = p(o_t | s_t^i)
-        """
-        for p in self.particle_set.particles:
-            p.weight = self.observation_model.likelihood(observation, p.state)
-        self.particle_set.normalize_weights()
-
     def resample(self) -> None:
         """
         Step 2: Multinomial resample based on weights.
-        Optionally skipped if ESS is still healthy.
         """
         weights = self.particle_set.weights()
+
+        # Resample from the current particle set based on the weights
         indices = np.random.choice(self.num_particles, size=self.num_particles, p=weights, replace=True)
 
         new_particles = []
@@ -146,6 +138,42 @@ class SingleBallParticleFilter:
 
         self.particle_set = ParticleSet(new_particles)
 
+
+    def propagate(self) -> None:
+        """Step 3: Move each particle forward via the transition model."""
+        for p in self.particle_set.particles:
+            p.state = self.transition_model.propagate(p.state)
+
+    def evaluate(self, observation: np.ndarray, predicted_position: np.ndarray) -> None:
+        """
+        Step 4: Weight each particle by how well it explains this observation.
+        w_t^i = p(o_t | s_t^i)
+        """
+        use_velocity_likelihood = False
+
+        if predicted_position is not None:
+            estimated_velocity = (observation - predicted_position[:2]) / self.transition_model.delta_t
+        else:
+            estimated_velocity = None  # first frame, no prior estimate yet
+
+        for p in self.particle_set.particles:
+            position_likelihood = self.observation_model.likelihood(observation, p.state)
+
+            if estimated_velocity is not None:
+                velocity_diff = p.state[2:] - estimated_velocity
+                velocity_likelihood = np.exp(
+                    -0.5 * np.sum(velocity_diff**2) / self.velocity_sigma**2
+                )
+                velocity_likelihood = max(velocity_likelihood, 0.01)
+                if use_velocity_likelihood:
+                    p.weight = position_likelihood * velocity_likelihood
+                else:
+                    p.weight = position_likelihood
+            else:
+                p.weight = position_likelihood
+        self.particle_set.normalize_weights()
+
+    
     def estimate(self) -> Tuple[np.ndarray, np.ndarray]:
         """Returns the current (mean, cov) estimate for this ball. Caches result."""
         self._current_mean, self._current_cov = self.particle_set.approximate()
@@ -301,7 +329,7 @@ class MultiObjectParticleFilter:
                 for f_idx, f in enumerate(self.filters):
                     if f_idx in assignment:
                         obs = observation[assignment[f_idx]]
-                        f.evaluate(obs)
+                        f.evaluate(obs, predicted_means[f_idx][:2])
                     # If a filter got no observation (more filters than obs), skip evaluate
                     # — its weights stay uniform from last resample, which is the right
                     # thing to do: all locations equally plausible until we see it again.
