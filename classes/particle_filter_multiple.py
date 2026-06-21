@@ -82,7 +82,6 @@ class SingleBallParticleFilter:
                  transition_model: TransitionModel,
                  observation_model: ObservationModel,
                  init_generator: Literal["PseudoRandom", "Sobol", "LHS"] = "PseudoRandom",
-                 roughening_noise: float = 0.0,
                  velocity_sigma: float = 20.0,
                  ) -> None:
         self.num_particles = num_particles
@@ -92,7 +91,6 @@ class SingleBallParticleFilter:
         self.transition_model = transition_model
         self.observation_model = observation_model
         self.init_generator = init_generator
-        self.roughening_noise = roughening_noise
         self.velocity_sigma = velocity_sigma
 
 
@@ -132,8 +130,6 @@ class SingleBallParticleFilter:
         new_particles = []
         for i in indices:
             copied_state = np.copy(self.particle_set.particles[i].state)
-            if self.roughening_noise > 0.0:
-                copied_state += np.random.normal(0, self.roughening_noise, size=copied_state.shape)
             new_particles.append(Particle(state=copied_state, weight=1.0 / self.num_particles))
 
         self.particle_set = ParticleSet(new_particles)
@@ -184,7 +180,6 @@ class SingleBallParticleFilter:
         """The last computed mean state — used for Hungarian cost matrix."""
         return self._current_mean
 
-
 class MultiObjectParticleFilter:
     """
     Tracks n_balls independently using one SingleBallParticleFilter per ball.
@@ -208,9 +203,9 @@ class MultiObjectParticleFilter:
                  state_bounds: List[Tuple[float, float]],
                  transition_model: TransitionModel,
                  observation_model: ObservationModel,
+                 neighbor_assignment: Literal["GreedyKNN", "Hungarian"] = "Hungarian",
                  init_generator: Literal["PseudoRandom", "Sobol", "LHS"] = "PseudoRandom",
-                 roughening_noise: float = 0.0,
-                 ess_resample_threshold: float = 0.5
+                 ess_resample_threshold: float = 0.5 # Controls when to resample based on effective sample size (ESS)
                  ) -> None:
         self.n_balls = n_balls
         self.ess_threshold = ess_resample_threshold
@@ -222,10 +217,18 @@ class MultiObjectParticleFilter:
                 transition_model=transition_model,
                 observation_model=observation_model,
                 init_generator=init_generator,
-                roughening_noise=roughening_noise
             )
             for _ in range(n_balls)
         ]
+        if neighbor_assignment == "GreedyKNN":
+            self._assign = self._assign_greedy_knn
+        elif neighbor_assignment == "Hungarian":
+            self._assign = self._assign_hungarian
+        else:
+            raise ValueError(
+                f"Unknown neighbor_assignment {neighbor_assignment!r}; "
+                f"expected 'GreedyKNN' or 'Hungarian'"
+            )
 
     def _build_cost_matrix(self,
                            predicted_means: np.ndarray,
@@ -258,7 +261,33 @@ class MultiObjectParticleFilter:
 
         return cost
 
-    def _assign(self,
+    def _assign_greedy_knn(self,
+                           predicted_means: np.ndarray,
+                           predicted_covs: np.ndarray,
+                           observations: List[np.ndarray]) -> Dict[int, int]:
+        """
+        Greedy KNN assignment: for each filter, find the closest observation by Mahalanobis distance.
+        """
+
+        if self.n_balls > 1:
+            cost = self._build_cost_matrix(predicted_means, predicted_covs, observations)
+            
+            assignment = {}
+            for i in range(self.n_balls):
+                closest_obs_idx = np.argmin(cost[i])
+                # If this observation is already assigned to another filter, we have a conflict, 
+                # so we assign to the next closest observation instead
+                while closest_obs_idx in assignment.values():
+                    cost[i, closest_obs_idx] = np.inf  # exclude this obs and find next closest
+                    closest_obs_idx = np.argmin(cost[i])
+                assignment[i] = closest_obs_idx
+        else:
+            assignment = {0: 0}
+
+        return assignment
+
+
+    def _assign_hungarian(self,
                 predicted_means: np.ndarray,
                 predicted_covs: np.ndarray,
                 observations: List[np.ndarray]) -> Dict[int, int]:
@@ -267,15 +296,19 @@ class MultiObjectParticleFilter:
         Returns dict: filter_idx -> observation_idx
         If there are more filters than observations, unmatched filters get None.
         """
-        n_obs = len(observations)
-        cost = self._build_cost_matrix(predicted_means, predicted_covs, observations)
 
-        # linear_sum_assignment minimizes total cost
-        filter_indices, obs_indices = linear_sum_assignment(cost)
+        if self.n_balls > 1:
+            cost = self._build_cost_matrix(predicted_means, predicted_covs, observations)
 
-        assignment = {}
-        for f_idx, o_idx in zip(filter_indices, obs_indices):
-            assignment[f_idx] = o_idx
+            # linear_sum_assignment minimizes total cost
+            # 
+            filter_indices, obs_indices = linear_sum_assignment(cost)
+
+            assignment = {}
+            for f_idx, o_idx in zip(filter_indices, obs_indices):
+                assignment[f_idx] = o_idx
+        else:
+            assignment = {0: 0}
 
         return assignment  # filter_idx -> obs_idx (unmatched filters absent)
 

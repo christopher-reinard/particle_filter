@@ -75,7 +75,7 @@ def animate_particle_filter(true_trajectory, history, save_path="particle_filter
     return ani
 
 
-def plot_sim_n_balls_point_prediction(true_trajectory, observations, history, dropout_start, dropout_end):
+def plot_sim_n_balls_point_prediction(true_trajectory, observations, history, dropout_start=-1, dropout_end=-1, save_path=None):
     plt.figure(figsize=(16, 8))
 
     # Dynamically extract the number of targets from the ground truth array
@@ -140,4 +140,7 @@ def plot_sim_n_balls_point_prediction(true_trajectory, observations, history, dr
     # Move legend outside the plot to prevent covering data
     plt.legend(loc="upper left", bbox_to_anchor=(1.02, 1), borderaxespad=0.)
     plt.tight_layout()
-    plt.show()
+    if save_path:
+        plt.savefig(save_path)
+    else:
+        plt.show()
