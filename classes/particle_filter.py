@@ -36,7 +36,8 @@ class ParticleSet:
         self.gmm_weights = self.gmm_weights
 
         #if self.gmm_covariances is not None:
-        noise_buffer = np.eye(4) * 2.0
+        #noise_buffer = np.eye(4) * 2.0
+        noise_buffer = np.diag([2.0, 2.0, 0.1, 0.1]) # Scale properly
         self.gmm_covariances = self.gmm_covariances + noise_buffer
         #self.gmm_covariances = None
 
