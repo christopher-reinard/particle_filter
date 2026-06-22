@@ -82,7 +82,9 @@ class SingleBallParticleFilter:
                  transition_model: TransitionModel,
                  observation_model: ObservationModel,
                  init_generator: Literal["PseudoRandom", "Sobol", "LHS"] = "PseudoRandom",
+                 use_velocity_likelihood: bool = False,
                  velocity_sigma: float = 20.0,
+                 min_velocity_likelihood: float = 0.01
                  ) -> None:
         self.num_particles = num_particles
         self.bounds = state_bounds
@@ -91,8 +93,11 @@ class SingleBallParticleFilter:
         self.transition_model = transition_model
         self.observation_model = observation_model
         self.init_generator = init_generator
-        self.velocity_sigma = velocity_sigma
 
+        # Optional Velocity Likelihood
+        self.use_velocity_likelihood = use_velocity_likelihood
+        self.velocity_sigma = velocity_sigma
+        self.min_velocity_likelihood = min_velocity_likelihood
 
         self.particle_set: ParticleSet = self._initialize()
         self._current_mean: Optional[np.ndarray] = None
@@ -145,7 +150,7 @@ class SingleBallParticleFilter:
         Step 4: Weight each particle by how well it explains this observation.
         w_t^i = p(o_t | s_t^i)
         """
-        use_velocity_likelihood = False
+        use_velocity_likelihood = self.use_velocity_likelihood
 
         if predicted_position is not None:
             estimated_velocity = (observation - predicted_position[:2]) / self.transition_model.delta_t
@@ -160,7 +165,7 @@ class SingleBallParticleFilter:
                 velocity_likelihood = np.exp(
                     -0.5 * np.sum(velocity_diff**2) / self.velocity_sigma**2
                 )
-                velocity_likelihood = max(velocity_likelihood, 0.01)
+                velocity_likelihood = max(velocity_likelihood, self.min_velocity_likelihood)
                 if use_velocity_likelihood:
                     p.weight = position_likelihood * velocity_likelihood
                 else:
@@ -205,7 +210,10 @@ class MultiObjectParticleFilter:
                  observation_model: ObservationModel,
                  neighbor_assignment: Literal["GreedyKNN", "Hungarian"] = "Hungarian",
                  init_generator: Literal["PseudoRandom", "Sobol", "LHS"] = "PseudoRandom",
-                 ess_resample_threshold: float = 0.5 # Controls when to resample based on effective sample size (ESS)
+                 ess_resample_threshold: float = 0.5, # Controls when to resample based on effective sample size (ESS)
+                 use_velocity_likelihood: bool = False,
+                 velocity_sigma: float = 20.0,
+                 min_velocity_likelihood: float = 0.01
                  ) -> None:
         self.n_balls = n_balls
         self.ess_threshold = ess_resample_threshold
@@ -217,6 +225,9 @@ class MultiObjectParticleFilter:
                 transition_model=transition_model,
                 observation_model=observation_model,
                 init_generator=init_generator,
+                use_velocity_likelihood=use_velocity_likelihood,
+                velocity_sigma=velocity_sigma,
+                min_velocity_likelihood=min_velocity_likelihood
             )
             for _ in range(n_balls)
         ]
@@ -292,7 +303,7 @@ class MultiObjectParticleFilter:
                 predicted_covs: np.ndarray,
                 observations: List[np.ndarray]) -> Dict[int, int]:
         """
-        Runs Hungarian algorithm on the cost matrix.
+        Runs Hungarian algorithm on the cost matrix, isn't really hungarian, but uses scipy's implementation of the algorithm.
         Returns dict: filter_idx -> observation_idx
         If there are more filters than observations, unmatched filters get None.
         """

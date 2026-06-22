@@ -34,18 +34,31 @@ def create_test_scenario(
     )
     return true_trajectory, observations, transition_model, observation_model
 
-def run_one_test(num_particles=1000, 
-                 n_objects=None,
+def run_one_test(true_states,
+                dropout_start, 
+                dropout_end, 
+                process_noise,
+                measurement_noise, 
+                num_particles=1000,
                  state_bounds=STATE_BOUNDS,
-                 transition_model=None,
-                 observation_model=None,
                  neighbor_assignment="Hungarian",
                  init_generator="Sobol",
                  ess_resample_threshold=0.5,
-                 observations=None,
-                 true_trajectory=None,
+                 use_velocity_likelihood=False,
+                 velocity_sigma=20.0,
+                 min_velocity_likelihood=0.01,
                  save_path=None):
     
+    n_objects = len(true_states)
+    true_trajectory, observations, transition_model, observation_model = create_test_scenario(
+        true_states,
+        dropout_start,
+        dropout_end,
+        process_noise,
+        measurement_noise
+    )
+
+
     pf = MultiObjectParticleFilter(
         num_particles=num_particles,
         n_balls=n_objects,
@@ -55,12 +68,18 @@ def run_one_test(num_particles=1000,
         neighbor_assignment=neighbor_assignment,
         init_generator=init_generator,
         ess_resample_threshold=ess_resample_threshold,
+        use_velocity_likelihood=use_velocity_likelihood,
+        velocity_sigma=velocity_sigma,
+        min_velocity_likelihood=min_velocity_likelihood
     )
 
     history = pf.run(observations, logs=[]) # Don't log for the test, we just want the final estimates
     
     if save_path:
-        plot_sim_n_balls_point_prediction(true_trajectory, observations, history=history, save_path=save_path)
+        plot_sim_n_balls_point_prediction(true_trajectory, 
+                                          observations, 
+                                          history, 
+                                          save_path)
 
     return get_stats(true_trajectory, observations, history, num_steps)
 
