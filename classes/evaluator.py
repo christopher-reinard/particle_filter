@@ -120,6 +120,12 @@ def get_stats(true_trajectory, observations, history, num_steps):
         'est_rmse': est_rmse,
         'obs_mean_error': obs_mean_error,
         'obs_rmse': obs_rmse,
-        'improvement': mse_improvement
+        'improvement': mse_improvement,
+        'raw': {
+            "true_trajectory": true_trajectory,
+            "observations": observations,
+            "history": history,
+            "num_steps": num_steps
+        }
     }
     return output

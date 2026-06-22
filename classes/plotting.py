@@ -29,9 +29,11 @@ def animate_particle_filter(true_trajectory, history, save_path="particle_filter
     fig, ax = plt.subplots(figsize=(16, 8))
 
     # Compute global axis limits for a stable view across frames
+    true_trajectory_xy = true_trajectory[:, :, :2]
+    estimated_trajectory = np.stack([h["estimate"][:, :2] for h in history])
     all_particles = np.concatenate([h["particle_states"][:, :2] for h in history])
-    all_true_points = true_trajectory[:, :, :2].reshape(-1, 2)
-    all_estimates = np.concatenate([h["estimate"][:, :2] for h in history])
+    all_true_points = true_trajectory_xy.reshape(-1, 2)
+    all_estimates = estimated_trajectory.reshape(-1, 2)
     observed_points = [obs[:, :2] for obs in (h["observation"] for h in history) if obs is not None]
     all_observations = np.concatenate(observed_points) if observed_points else np.empty((0, 2))
     all_points = np.concatenate([all_particles, all_true_points, all_estimates, all_observations], axis=0)
@@ -39,26 +41,55 @@ def animate_particle_filter(true_trajectory, history, save_path="particle_filter
     y_min, y_max = all_points[:, 1].min(), all_points[:, 1].max()
     margin = 1.0
 
+    for target_idx in range(true_trajectory_xy.shape[1]):
+        ax.plot(
+            true_trajectory_xy[:, target_idx, 0],
+            true_trajectory_xy[:, target_idx, 1],
+            color="green",
+            linestyle="--",
+            linewidth=1.5,
+            alpha=0.2,
+            label="True Trajectory" if target_idx == 0 else None,
+        )
+    for estimate_idx in range(estimated_trajectory.shape[1]):
+        ax.plot(
+            estimated_trajectory[:, estimate_idx, 0],
+            estimated_trajectory[:, estimate_idx, 1],
+            color="orange",
+            linewidth=1.5,
+            alpha=0.2,
+            label="Estimated Trajectory" if estimate_idx == 0 else None,
+        )
+
+    ax.grid(True, linestyle=":", alpha=0.7)
+    ax.set_xlim(x_min - margin, x_max + margin)
+    ax.set_ylim(y_min - margin, y_max + margin)
+    ax.set_xlabel("X Position")
+    ax.set_ylabel("Y Position")
+
+    empty_offsets = np.empty((0, 2))
+    particle_plot = ax.scatter([], [], alpha=0.01, label="Particles")
+    true_plot = ax.scatter([], [], color="green", marker="*", s=200, label="True Positions")
+    estimate_plot = ax.scatter([], [], color="orange", marker="o", s=100, label="GMM Estimates")
+    observation_plot = ax.scatter([], [], color="red", marker="x", s=100, label="Observations")
+    title = ax.set_title("")
+    ax.legend()
+
     def update(time):
-        ax.clear()
-        ax.grid(True, linestyle=":", alpha=0.7)
-        particles = history[time]["particle_states"]
+        particles = history[time]["particle_states"][:, :2]
         observation = history[time]["observation"]
-        true_points = true_trajectory[time][:, :2]
-        estimations = history[time]["estimate"][:, :2]
-
-        ax.scatter(particles[:, 0], particles[:, 1], alpha=0.01, label="Particles")
-        ax.scatter(true_points[:, 0], true_points[:, 1], color="green", marker="*", s=200, label="True Positions")
-        ax.scatter(estimations[:, 0], estimations[:, 1], color="orange", marker="o", s=100, label="GMM Estimates")
+        particle_plot.set_offsets(particles)
+        true_plot.set_offsets(true_trajectory_xy[time])
+        estimate_plot.set_offsets(estimated_trajectory[time])
         if observation is not None:
-            ax.scatter(observation[:, 0], observation[:, 1], color="red", marker="x", s=100, label="Observations")
+            observation_plot.set_offsets(observation[:, :2])
+            observation_plot.set_visible(True)
+        else:
+            observation_plot.set_offsets(empty_offsets)
+            observation_plot.set_visible(False)
 
-        ax.set_xlim(x_min - margin, x_max + margin)
-        ax.set_ylim(y_min - margin, y_max + margin)
-        ax.set_title(f"Particle Distribution at Time Step {time}")
-        ax.set_xlabel("X Position")
-        ax.set_ylabel("Y Position")
-        ax.legend()
+        title.set_text(f"Particle Distribution at Time Step {time}")
+        return particle_plot, true_plot, estimate_plot, observation_plot, title
 
     ani = animation.FuncAnimation(
         fig,
