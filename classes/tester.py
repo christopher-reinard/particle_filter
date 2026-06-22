@@ -1,3 +1,4 @@
+from classes.particle_filter import ParticleFilter
 from classes.particle_filter_multiple import MultiObjectParticleFilter
 from classes.observation import TransitionModel, ObservationModel
 from classes.simulator import create_ground_truth, generate_random_balls, create_ground_truth_n_balls
@@ -5,6 +6,7 @@ from classes.evaluator import get_stats
 from classes.plotting import animate_particle_filter, plot_sim_n_balls_point_prediction
 
 import numpy as np
+from typing import Literal
 
 step_size = 0.05
 num_steps = 120
@@ -40,14 +42,15 @@ def run_one_test(true_states,
                 process_noise,
                 measurement_noise, 
                 num_particles=1000,
-                 state_bounds=STATE_BOUNDS,
-                 neighbor_assignment="Hungarian",
-                 init_generator="Sobol",
-                 ess_resample_threshold=0.5,
-                 use_velocity_likelihood=False,
-                 velocity_sigma=20.0,
-                 min_velocity_likelihood=0.01,
-                 save_path=None):
+                state_bounds=STATE_BOUNDS,
+                neighbor_assignment="Hungarian",
+                init_generator="Sobol",
+                ess_resample_threshold=0.5,
+                use_velocity_likelihood=False,
+                velocity_sigma=20.0,
+                min_velocity_likelihood=0.01,
+                save_path=None,
+                model: Literal["MultObjectParticleFilter", "SingleParticleFilter"]="MultObjectParticleFilter"):
     
     n_objects = len(true_states)
     true_trajectory, observations, transition_model, observation_model = create_test_scenario(
@@ -58,22 +61,42 @@ def run_one_test(true_states,
         measurement_noise
     )
 
-    pf = MultiObjectParticleFilter(
-        num_particles=num_particles,
-        n_balls=n_objects,
-        state_bounds=state_bounds,
-        transition_model=transition_model,
-        observation_model=observation_model,
-        neighbor_assignment=neighbor_assignment,
-        init_generator=init_generator,
-        ess_resample_threshold=ess_resample_threshold,
-        use_velocity_likelihood=use_velocity_likelihood,
-        velocity_sigma=velocity_sigma,
-        min_velocity_likelihood=min_velocity_likelihood
-    )
+    if model == "MultiObjectParticleFilter":
+        pf = MultiObjectParticleFilter(
+            num_particles=num_particles,
+            n_balls=n_objects,
+            state_bounds=state_bounds,
+            transition_model=transition_model,
+            observation_model=observation_model,
+            neighbor_assignment=neighbor_assignment,
+            init_generator=init_generator,
+            ess_resample_threshold=ess_resample_threshold,
+            use_velocity_likelihood=use_velocity_likelihood,
+            velocity_sigma=velocity_sigma,
+            min_velocity_likelihood=min_velocity_likelihood
+        )
 
-    history = pf.run(observations, logs=[]) # Don't log for the test, we just want the final estimates
+        history = pf.run(observations, logs=[]) # Don't log for the test, we just want the final estimates
     
+    elif model == "SingleParticleFilter":
+        pf = ParticleFilter(
+            num_particles=num_particles,
+            state_bounds=state_bounds,
+            transition_model=transition_model,
+            observation_model=observation_model,
+            init_generator=init_generator,
+            roughening_noise=0.0
+        )
+        
+        history = pf.run(
+            observations=observations, 
+            n_objects=n_objects,
+            change_resample_order=True,
+            logs=[]
+        )
+    else:
+        raise ValueError("Unknown Model-type")
+   
     if save_path:
         print(f"Saving plot to {save_path}")
         plot_sim_n_balls_point_prediction(true_trajectory, 
@@ -138,7 +161,7 @@ Usage
 """
 
 import itertools
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Literal
 import numpy as np
 import pandas as pd
 
@@ -153,7 +176,8 @@ class ParticleFilterTester:
     def __init__(self,
                  default_parameters: Dict[str, Any],
                  run_fn=None,
-                 save_dir: Optional[str] = None):
+                 save_dir: Optional[str] = None,
+                 model: Literal["MultObjectParticleFilter", "SingleParticleFilter"]="MultObjectParticleFilter"):
         """
         Args:
             default_parameters: dict of kwargs to pass to `run_fn` for every
@@ -181,6 +205,7 @@ class ParticleFilterTester:
             import os
             os.makedirs(self.save_dir, exist_ok=True)
         self.results: List[Dict[str, Any]] = []
+        self.model = model
 
     # ------------------------------------------------------------------
     # Single run
@@ -205,7 +230,7 @@ class ParticleFilterTester:
         if seed is not None:
             np.random.seed(seed)
 
-        stats = self.run_fn(save_path=save_path, **params)
+        stats = self.run_fn(save_path=save_path, model=self.model, **params)
 
         record = {"label": label, **overrides, **stats}
         self.results.append(record)
