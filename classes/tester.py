@@ -2,7 +2,7 @@ from classes.particle_filter_multiple import MultiObjectParticleFilter
 from classes.observation import TransitionModel, ObservationModel
 from classes.simulator import create_ground_truth, generate_random_balls, create_ground_truth_n_balls
 from classes.evaluator import get_stats
-from classes.plotting import plot_sim_n_balls_point_prediction
+from classes.plotting import animate_particle_filter, plot_sim_n_balls_point_prediction
 
 import numpy as np
 
@@ -58,7 +58,6 @@ def run_one_test(true_states,
         measurement_noise
     )
 
-
     pf = MultiObjectParticleFilter(
         num_particles=num_particles,
         n_balls=n_objects,
@@ -76,10 +75,15 @@ def run_one_test(true_states,
     history = pf.run(observations, logs=[]) # Don't log for the test, we just want the final estimates
     
     if save_path:
+        print(f"Saving plot to {save_path}")
         plot_sim_n_balls_point_prediction(true_trajectory, 
                                           observations, 
                                           history, 
+                                          dropout_start,
+                                          dropout_end,
                                           save_path)
+        print("Animating particle filter...")
+        animate_particle_filter(true_trajectory, history, save_path=save_path.replace(".png", ".gif"))
 
     return get_stats(true_trajectory, observations, history, num_steps)
 
@@ -173,6 +177,9 @@ class ParticleFilterTester:
         self.run_fn = run_fn
         self.default_parameters = dict(default_parameters)
         self.save_dir = save_dir
+        if self.save_dir:
+            import os
+            os.makedirs(self.save_dir, exist_ok=True)
         self.results: List[Dict[str, Any]] = []
 
     # ------------------------------------------------------------------
@@ -260,6 +267,8 @@ class ParticleFilterTester:
         for combo in combos:
             overrides = dict(zip(names, combo))
             label = "_".join(f"{k}={v}" for k, v in overrides.items())
+            print(f"Running test: {label}")
+
             self.run(label=label, seed=seed, **overrides)
 
         return self.results_df()

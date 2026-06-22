@@ -86,6 +86,7 @@ class SingleBallParticleFilter:
                  velocity_sigma: float = 20.0,
                  min_velocity_likelihood: float = 0.01
                  ) -> None:
+        
         self.num_particles = num_particles
         self.bounds = state_bounds
         self.state_dim = len(self.bounds)  # 4
@@ -211,7 +212,7 @@ class MultiObjectParticleFilter:
                  neighbor_assignment: Literal["GreedyKNN", "Hungarian"] = "Hungarian",
                  init_generator: Literal["PseudoRandom", "Sobol", "LHS"] = "PseudoRandom",
                  ess_resample_threshold: float = 0.5, # Controls when to resample based on effective sample size (ESS)
-                 use_velocity_likelihood: bool = False,
+                 use_velocity_likelihood: bool = True,
                  velocity_sigma: float = 20.0,
                  min_velocity_likelihood: float = 0.01
                  ) -> None:
@@ -325,7 +326,7 @@ class MultiObjectParticleFilter:
 
     def run(self,
             observations: List[Optional[List[np.ndarray]]],
-            logs: List[str] = ["PF"]) -> List[Dict]:
+            logs: List[str] = []) -> List[Dict]:
         """
         Main execution loop.
 

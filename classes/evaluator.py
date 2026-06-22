@@ -112,11 +112,14 @@ def get_stats(true_trajectory, observations, history, num_steps):
     obs_rmse = np.sqrt(np.mean(np.square(all_obs_dists)))
     obs_mean_error = np.mean(all_obs_dists)
 
-  
+    mse_improvement = 100 * (obs_rmse - est_rmse) / obs_rmse if obs_rmse > 0 else float('inf')
+
+
     output = {
         'est_mean_error': est_mean_error,
         'est_rmse': est_rmse,
         'obs_mean_error': obs_mean_error,
-        'obs_rmse': obs_rmse
+        'obs_rmse': obs_rmse,
+        'improvement': mse_improvement
     }
     return output
