@@ -36,7 +36,8 @@ class ParticleSet:
         self.gmm_weights = self.gmm_weights
 
         #if self.gmm_covariances is not None:
-        noise_buffer = np.eye(4) * 2.0
+        #noise_buffer = np.eye(4) * 2.0
+        noise_buffer = np.diag([2.0, 2.0, 0.1, 0.1]) # Scale properly
         self.gmm_covariances = self.gmm_covariances + noise_buffer
         #self.gmm_covariances = None
 
@@ -143,7 +144,7 @@ class ParticleFilter:
 
         return ParticleSet(particles)
 
-    def _resample(self, n_objects: int = 1, estimated_means: np.ndarray = None, estimated_covs: np.ndarray = None) -> None:
+    def _resample(self, n_objects: int = 1, estimated_means: np.ndarray = None, estimated_covs: np.ndarray = None,  observations: np.ndarray = None) -> None:
         states = self.particle_set.states()
         weights = self.particle_set.weights()
         #states = np.array([p.state for p in self.particle_set.particles])
@@ -179,6 +180,15 @@ class ParticleFilter:
             # Determine for each particle the closest distance to the next centroid
             cluster_assignments = np.argmin(distances, axis=1)
 
+            valid_observations = None
+            if observations is not None:
+                valid_observations = np.asarray(observations)
+                if valid_observations.ndim == 1:
+                    valid_observations = valid_observations[None, :]
+                valid_observations = valid_observations[~np.isnan(valid_observations).any(axis=1)]
+                if len(valid_observations) == 0:
+                    valid_observations = None
+
             for i in range(n_objects):
                 cluster_indices = np.where(cluster_assignments == i)[0]
 
@@ -203,13 +213,41 @@ class ParticleFilter:
                         copied_state += np.random.normal(0, self.roughening_noise, size=copied_state.shape)
                         new_particles.append(Particle(state=copied_state, weight=1.0 / self.num_particles))
                 else:
-                    for _ in range(target_count):
-                        #rescued_state = np.copy(estimated_means[i])
-                        #rescued_state[:2] += np.random.normal(0, 1.0, 2)
-                        #new_particles.append(Particle(state=rescued_state, weight=1.0 / self.num_particles))
-                        safe_cov = estimated_covs[i] + np.eye(self.state_dim) * 1e-6
-                        rescued_state = np.random.multivariate_normal(estimated_means[i], safe_cov)
-                        new_particles.append(Particle(state=rescued_state, weight=1.0 / self.num_particles))
+                    amount_estimation = round(target_count * 0.90)
+                    amount_observation = round(target_count * 0.10)
+                    amount_estimation += target_count - (amount_estimation + amount_observation)
+
+                    safe_cov = estimated_covs[i] + np.eye(self.state_dim) * 1e-6
+                    if amount_estimation > 0:
+                        rescued_states = np.random.multivariate_normal(
+                            estimated_means[i],
+                            safe_cov,
+                            size=amount_estimation
+                        )
+                        new_particles.extend(
+                            Particle(state=s, weight=1.0 / self.num_particles)
+                            for s in rescued_states
+                        )
+
+                    if amount_observation > 0:
+                        observation_states = np.random.multivariate_normal(
+                            estimated_means[i],
+                            safe_cov,
+                            size=amount_observation
+                        )
+                        if valid_observations is not None:
+                            obs_dim = min(valid_observations.shape[1], self.state_dim)
+                            obs_diffs = valid_observations[:, :obs_dim] - estimated_means[i, :obs_dim]
+                            nearest_obs = valid_observations[np.argmin(np.sum(obs_diffs * obs_diffs, axis=1))]
+                            measurement_std = np.sqrt(self.observation_model.measurement_noise)
+                            observation_states[:, :obs_dim] = (
+                                nearest_obs[:obs_dim]
+                                + np.random.normal(0, measurement_std, size=(amount_observation, obs_dim))
+                            )
+                        new_particles.extend(
+                            Particle(state=s, weight=1.0 / self.num_particles)
+                            for s in observation_states
+                        )
 
             #self.particle_set = ParticleSet(new_particles)
             self.particle_set.update_particles(new_particles)
@@ -270,6 +308,7 @@ class ParticleFilter:
     def run(self, observations: List[Optional[np.ndarray]], n_objects,
             change_resample_order=True, logs=["PF", "GMM"]) -> List[Dict]:
         """Execution loop, returning history for visualization"""
+        print(f"Exec ParticleFilter with {self.num_particles} Particles and {n_objects} balls.")
         history = []
         log_gmm = True if "GMM" in logs else False
         log_pf = True if "PF" in logs else False
@@ -280,7 +319,7 @@ class ParticleFilter:
         t = 0
         for observation in observations:
             if (observation is not None) & (change_resample_order == False): # it doesnt make sense to resample if weights werent updated
-                self._resample(n_objects=n_objects, estimated_means=old_position, estimated_covs=old_covs)
+                self._resample(n_objects=n_objects, estimated_means=old_position, estimated_covs=old_covs, observations=observation)
 
             self._propagate()
 
@@ -291,7 +330,7 @@ class ParticleFilter:
             if (observation is not None) & (change_resample_order == True): # it doesnt make sense to resample if weights werent updated
                 #ess = self.particle_set.effective_sample_size()
                 #if ess < (0.5 * self.num_particles):
-                self._resample(n_objects=n_objects, estimated_means=old_position, estimated_covs=old_covs)
+                self._resample(n_objects=n_objects, estimated_means=old_position, estimated_covs=old_covs, observations=observation)
 
             new_position, new_covs = self.particle_set.approximate(
                 n_objects=n_objects,

@@ -4,3 +4,6 @@ results/
 *.gif
 
 .vscode/*
+_notes.txt
+
+.venv
