@@ -3,9 +3,6 @@ from scipy.optimize import linear_sum_assignment
 from typing import List, Tuple, Literal, Optional, Dict
 from .observation import TransitionModel, ObservationModel
 
-# TODO: Add somehow directional information by inferring from observations?
-
-
 class Particle:
     """
     A Particle representing a single ball's state and weight.
@@ -232,6 +229,9 @@ class MultiObjectParticleFilter:
             )
             for _ in range(n_balls)
         ]
+        self.prev_observations = []
+        self.prev_estimates = []
+
         if neighbor_assignment == "GreedyKNN":
             self._assign = self._assign_greedy_knn
         elif neighbor_assignment == "Hungarian":
@@ -311,9 +311,9 @@ class MultiObjectParticleFilter:
 
         if self.n_balls > 1:
             cost = self._build_cost_matrix(predicted_means, predicted_covs, observations)
+            print(cost)
 
             # linear_sum_assignment minimizes total cost
-            # 
             filter_indices, obs_indices = linear_sum_assignment(cost)
 
             assignment = {}
@@ -368,6 +368,8 @@ class MultiObjectParticleFilter:
 
             if observation is not None:
                 # --- Step 3 & 4: Build cost matrix and assign ---
+
+                # Given the predictions and the observation, which filter should get which assignment?
                 assignment = self._assign(predicted_means, predicted_covs, observation)
 
                 # --- Step 5: Evaluate each filter with its assigned observation ---

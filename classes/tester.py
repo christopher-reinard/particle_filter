@@ -8,12 +8,6 @@ from classes.plotting import animate_particle_filter, plot_sim_n_balls_point_pre
 import numpy as np
 from typing import Literal
 
-step_size = 0.05
-num_steps = 120
-
-num_particles = 1000
-init_generator = "Sobol"
-
 
 STATE_BOUNDS = [
     (0.0, 50.0),   # x bounds
@@ -23,6 +17,8 @@ STATE_BOUNDS = [
 ]
 
 def create_test_scenario(
+        step_size,
+        num_steps,
         true_states,
         dropout_start, 
         dropout_end, 
@@ -36,7 +32,9 @@ def create_test_scenario(
     )
     return true_trajectory, observations, transition_model, observation_model
 
-def run_one_test(true_states,
+def run_one_test(step_size, 
+                num_steps,
+                true_states,
                 dropout_start, 
                 dropout_end, 
                 process_noise,
@@ -50,10 +48,12 @@ def run_one_test(true_states,
                 velocity_sigma=20.0,
                 min_velocity_likelihood=0.01,
                 save_path=None,
-                model: Literal["MultObjectParticleFilter", "SingleParticleFilter"]="MultObjectParticleFilter"):
+                model: Literal["MultiObjectParticleFilter", "SingleParticleFilter"]="MultiObjectParticleFilter"):
     
     n_objects = len(true_states)
     true_trajectory, observations, transition_model, observation_model = create_test_scenario(
+        step_size,
+        num_steps,
         true_states,
         dropout_start,
         dropout_end,
@@ -105,8 +105,10 @@ def run_one_test(true_states,
                                           dropout_start,
                                           dropout_end,
                                           save_path)
-        print("Animating particle filter...")
-        animate_particle_filter(true_trajectory, history, save_path=save_path.replace(".png", ".gif"))
+        
+        # # Uncomment to save an animation
+        # print("Animating particle filter...")
+        # animate_particle_filter(true_trajectory, history, save_path=save_path.replace(".png", ".gif"))
 
     return get_stats(true_trajectory, observations, history, num_steps)
 
@@ -176,8 +178,7 @@ class ParticleFilterTester:
     def __init__(self,
                  default_parameters: Dict[str, Any],
                  run_fn=None,
-                 save_dir: Optional[str] = None,
-                 model: Literal["MultObjectParticleFilter", "SingleParticleFilter"]="MultObjectParticleFilter"):
+                 save_dir: Optional[str] = None):
         """
         Args:
             default_parameters: dict of kwargs to pass to `run_fn` for every
@@ -205,7 +206,6 @@ class ParticleFilterTester:
             import os
             os.makedirs(self.save_dir, exist_ok=True)
         self.results: List[Dict[str, Any]] = []
-        self.model = model
 
     # ------------------------------------------------------------------
     # Single run
@@ -230,7 +230,7 @@ class ParticleFilterTester:
         if seed is not None:
             np.random.seed(seed)
 
-        stats = self.run_fn(save_path=save_path, model=self.model, **params)
+        stats = self.run_fn(save_path=save_path, **params)
 
         record = {"label": label, **overrides, **stats}
         self.results.append(record)

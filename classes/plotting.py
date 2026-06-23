@@ -1,8 +1,5 @@
 from matplotlib import pyplot as plt
-import os
-import io
 import matplotlib.pyplot as plt
-from tqdm.notebook import tqdm
 from matplotlib import pyplot as plt
 from matplotlib import animation
 import numpy as np
