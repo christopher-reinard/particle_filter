@@ -37,9 +37,13 @@ class ParticleSet:
 
         #if self.gmm_covariances is not None:
         #noise_buffer = np.eye(4) * 2.0
-        noise_buffer = np.diag([2.0, 2.0, 0.1, 0.1]) # Scale properly
-        self.gmm_covariances = self.gmm_covariances + noise_buffer
+        #noise_buffer = np.diag([2.0, 2.0, 0.1, 0.1]) # Scale properly
+        #self.gmm_covariances = self.gmm_covariances #+ noise_buffer
         #self.gmm_covariances = None
+        if self.gmm_covariances is not None:
+            # Add small noise, to ensure invertability
+            noise_buffer = np.eye(4) * 1e-6 
+            self.gmm_covariances = self.gmm_covariances + noise_buffer
 
     def normalize_weights(self) -> None:
         """
@@ -68,16 +72,14 @@ class ParticleSet:
         states = self.states()#np.array([p.state for p in self.particles])
         weights = self.weights()#np.array([p.weight for p in self.particles])
 
-        #if n_objects == 1:
-        #    # Weighted average for a single target
-        #    mean = np.average(states, weights=weights, axis=0)
-        #    return mean, # TODO: COV
+        if self.gmm_covariances is None:
+            print("INIT COVARIANCE")
+            global_cov = np.cov(states, rowvar=False) + np.eye(4) * 2.0#1e-3
+            initial_covs = np.array([global_cov for _ in range(n_objects)])
+            covs = initial_covs
+        else:
+            covs = self.gmm_covariances
 
-        # Compute initial covs as otherwise we get NAN as numbers got to small with variance of 1.0
-        global_cov = np.cov(states, rowvar=False) + np.eye(4) * 2.0#1e-3
-        initial_covs = np.array([global_cov for _ in range(n_objects)])
-
-        covs = initial_covs if self.gmm_covariances is None else self.gmm_covariances
         weights = self.gmm_weights if self.gmm_weights is not None else weights
 
         self.gmm.fit(states, n_components=n_objects,
@@ -88,6 +90,7 @@ class ParticleSet:
         self.gmm_weights = self.gmm.weights
         self.gmm_covariances = self.gmm.covariances
         return self.gmm.means, self.gmm.covariances
+    
 
 class ParticleFilter:
     """
@@ -151,6 +154,7 @@ class ParticleFilter:
         #weights = np.array([p.weight for p in self.particle_set.particles])
 
         if n_objects == 1 or estimated_means is None or estimated_covs is None:
+            print("Resampling - Var 1")
             indices = np.random.choice(self.num_particles, size=self.num_particles, p=weights, replace=True)
             new_particles = []
             for i in indices:
@@ -213,8 +217,9 @@ class ParticleFilter:
                         copied_state += np.random.normal(0, self.roughening_noise, size=copied_state.shape)
                         new_particles.append(Particle(state=copied_state, weight=1.0 / self.num_particles))
                 else:
-                    amount_estimation = round(target_count * 0.90)
-                    amount_observation = round(target_count * 0.10)
+                    print("--> Cluster lost. Resampling around Estimation.")
+                    amount_estimation = round(target_count * 0.50)
+                    amount_observation = round(target_count * 0.50)
                     amount_estimation += target_count - (amount_estimation + amount_observation)
 
                     safe_cov = estimated_covs[i] + np.eye(self.state_dim) * 1e-6
@@ -308,7 +313,7 @@ class ParticleFilter:
     def run(self, observations: List[Optional[np.ndarray]], n_objects,
             change_resample_order=True, logs=["PF", "GMM"]) -> List[Dict]:
         """Execution loop, returning history for visualization"""
-        print(f"Exec ParticleFilter with {self.num_particles} Particles and {n_objects} balls.")
+        print(f"Exec ParticleFilter with {self.num_particles} Particles and {n_objects} balls. change_resample_order = {change_resample_order}")
         history = []
         log_gmm = True if "GMM" in logs else False
         log_pf = True if "PF" in logs else False
@@ -328,8 +333,6 @@ class ParticleFilter:
 
             # Adjustment to Condensation-Algorithm. Resampling at the beginning doesnt make sense. First Iter always shows estimation of MEAN. Because we have sample uniform and weighting doesnt influence enough alone
             if (observation is not None) & (change_resample_order == True): # it doesnt make sense to resample if weights werent updated
-                #ess = self.particle_set.effective_sample_size()
-                #if ess < (0.5 * self.num_particles):
                 self._resample(n_objects=n_objects, estimated_means=old_position, estimated_covs=old_covs, observations=observation)
 
             new_position, new_covs = self.particle_set.approximate(
@@ -375,7 +378,3 @@ class ParticleFilter:
             t += 1
 
         return history
-
-
-#Could we add a predict method to the GMM?
-#With super less particles (like 200) they sometimes miss a trajectory completely if an observation is super far away from all the clusters we might need to add some particles there

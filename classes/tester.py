@@ -50,7 +50,8 @@ def run_one_test(step_size,
                 min_velocity_likelihood=0.01,
                 save_path=None,
                 plot_title=None,
-                model: Literal["MultiParticleFilter", "SingleParticleFilter"]="MultiParticleFilter"):
+                model: Literal["MultiParticleFilter", "SingleParticleFilter"]="MultiParticleFilter",
+                logs=[]):
     
     n_objects = len(true_states)
     true_trajectory, observations, transition_model, observation_model = create_test_scenario(
@@ -79,7 +80,7 @@ def run_one_test(step_size,
             min_velocity_likelihood=min_velocity_likelihood
         )
 
-        history = pf.run(observations, logs=[]) # Don't log for the test, we just want the final estimates
+        history = pf.run(observations, logs=logs) # Don't log for the test, we just want the final estimates
     
     elif model == "SingleParticleFilter":
         pf = ParticleFilter(
@@ -95,7 +96,7 @@ def run_one_test(step_size,
             observations=observations, 
             n_objects=n_objects,
             change_resample_order=True,
-            logs=[]
+            logs=logs
         )
     else:
         raise ValueError("Unknown Model-type")

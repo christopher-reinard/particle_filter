@@ -10,10 +10,6 @@ class TransitionModel:
     """
     def __init__(self, delta_t: float, process_noise: float = 1e-3, g: float = 9.81) -> None:
         self.delta_t = delta_t
-        self.process_noise = process_noise
-        self.process_cov = process_noise * np.eye(4)
-        self.inv_process_cov = np.linalg.inv(self.process_cov) if process_noise > 0 else np.zeros((4, 4))  # handle zero noise case
-
         dt = delta_t
 
         self.A = np.array([
@@ -31,12 +27,50 @@ class TransitionModel:
         ])
 
         self.a = np.array([0.0, -g, 0.0])
-
         # Pre-compute the deterministic bias term once: B @ a  shape (4,)
         self._bias = self.B @ self.a
 
+        # TEST
+        self.a = np.array([0.0, -g])
+        self._bias = np.array([0.0, -0.5 * g * dt**2, 0.0, -g * dt])
+
+
+        #self.process_noise = process_noise
+        #self.process_cov = process_noise * np.eye(4)
+        #self.inv_process_cov = np.linalg.inv(self.process_cov) if process_noise > 0 else np.zeros((4, 4))  # handle zero noise case
+        
+        # New Assumption, not just add some noise to all dimensions.
+        # Problem: We would apply same noise to two different metrics (position, velocity)
+        # Instead: We need to properly adjust them Continuous White Noise Process Noise --> Random Walk in Variance
+        dt2 = dt ** 2
+        dt3 = dt ** 3
+        dt4 = dt ** 4
+        self.process_cov = process_noise * np.array([
+                [dt4/4, 0,     dt3/2, 0    ],
+                [0,     dt4/4, 0,     dt3/2],
+                [dt3/2, 0,     dt2,   0    ],
+                [0,     dt3/2, 0,     dt2  ]
+            ])
+        
+        self.process_cov = process_noise * np.array([
+            [dt**3/3, 0,       dt**2/2, 0      ],
+            [0,       dt**3/3, 0,       dt**2/2],
+            [dt**2/2, 0,       dt,      0      ],
+            [0,       dt**2/2, 0,       dt     ]
+        ])
+
+
+        self.inv_process_cov = np.linalg.inv(self.process_cov)
+        self._L = np.linalg.cholesky(self.process_cov)
+        # Normalization constant for 4D log-likelihood
+        sign, logdet = np.linalg.slogdet(self.process_cov)
+        self._log_normalizer = -0.5 * (4 * np.log(2 * np.pi) + logdet)
+                                           
+
+        #self.inv_process_cov = np.linalg.inv(self.process_cov) if process_noise > 0 else np.zeros((4, 4))
+
         # Cholesky factor of process_cov for fast batch noise sampling
-        self._L = np.linalg.cholesky(self.process_cov)  # (4, 4)
+        #self._L = np.linalg.cholesky(self.process_cov)  # (4, 4)
 
     # ------------------------------------------------------------------
     # Scalar API (unchanged — still used by legacy callers)
@@ -46,36 +80,16 @@ class TransitionModel:
         """Apply physics to a single (4,) state."""
         predicted = self.A @ state + self._bias
         if not ignore_noise:
-            predicted += np.random.multivariate_normal(np.zeros(4), self.process_cov)
+            noise = self._L @ np.random.standard_normal(4)
+            predicted += noise
+            #predicted += np.random.multivariate_normal(np.zeros(4), self.process_cov)
         return predicted
 
     def transition_log_likelihood(self, old_state: np.ndarray, new_state: np.ndarray) -> float:
         pred = self.A @ old_state + self._bias
         residual = new_state - pred
-        return -0.5 * (residual @ self.inv_process_cov @ residual)
-
-    # ------------------------------------------------------------------
-    # Vectorised API — called by SingleBallParticleFilter.propagate()
-    # ------------------------------------------------------------------
-
-    def propagate_batch(self, states: np.ndarray) -> np.ndarray:
-        """
-        Propagate N particles in one shot.
-
-        Args:
-            states: (N, 4)
-        Returns:
-            new_states: (N, 4)
-        """
-        N = len(states)
-        # Deterministic step: (N, 4) @ (4, 4).T + (4,)
-        predicted = states @ self.A.T + self._bias  # (N, 4)
-
-        # Sample N independent noise vectors: L @ z  where z ~ N(0, I)
-        # (4, 4) @ (4, N)  →  (4, N).T  →  (N, 4)
-        noise = (self._L @ np.random.randn(4, N)).T  # (N, 4)
-
-        return predicted + noise
+        mahalanobis = -0.5 * (residual @ self.inv_process_cov @ residual)
+        return self._log_normalizer + mahalanobis
 
 
 class ObservationModel:
