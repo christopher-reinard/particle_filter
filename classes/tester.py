@@ -42,13 +42,15 @@ def run_one_test(step_size,
                 num_particles=1000,
                 state_bounds=STATE_BOUNDS,
                 neighbor_assignment="Hungarian",
+                distance_metric="LogLikelihood",
                 init_generator="Sobol",
                 ess_resample_threshold=0.5,
                 use_velocity_likelihood=False,
                 velocity_sigma=20.0,
                 min_velocity_likelihood=0.01,
                 save_path=None,
-                model: Literal["MultiObjectParticleFilter", "SingleParticleFilter"]="MultiObjectParticleFilter"):
+                plot_title=None,
+                model: Literal["MultiParticleFilter", "SingleParticleFilter"]="MultiParticleFilter"):
     
     n_objects = len(true_states)
     true_trajectory, observations, transition_model, observation_model = create_test_scenario(
@@ -61,7 +63,7 @@ def run_one_test(step_size,
         measurement_noise
     )
 
-    if model == "MultiObjectParticleFilter":
+    if model == "MultiParticleFilter":
         pf = MultiObjectParticleFilter(
             num_particles=num_particles,
             n_balls=n_objects,
@@ -69,6 +71,7 @@ def run_one_test(step_size,
             transition_model=transition_model,
             observation_model=observation_model,
             neighbor_assignment=neighbor_assignment,
+            distance_metric=distance_metric,
             init_generator=init_generator,
             ess_resample_threshold=ess_resample_threshold,
             use_velocity_likelihood=use_velocity_likelihood,
@@ -97,14 +100,15 @@ def run_one_test(step_size,
     else:
         raise ValueError("Unknown Model-type")
    
-    if save_path:
+    if save_path and plot_title:
         print(f"Saving plot to {save_path}")
         plot_sim_n_balls_point_prediction(true_trajectory, 
                                           observations, 
                                           history, 
                                           dropout_start,
                                           dropout_end,
-                                          save_path)
+                                          save_path,
+                                          plot_title=plot_title)
         
         # # Uncomment to save an animation
         # print("Animating particle filter...")
@@ -211,7 +215,7 @@ class ParticleFilterTester:
     # Single run
     # ------------------------------------------------------------------
 
-    def run(self, label: str = "default", seed: Optional[int] = None, **overrides) -> Dict[str, Any]:
+    def run(self, save_name=None, plot_title: str = None, seed: Optional[int] = None, **overrides) -> Dict[str, Any]:
         """
         Run one test: defaults merged with `overrides` (overrides win).
         If `seed` is given, np.random.seed(seed) is called right before
@@ -222,17 +226,18 @@ class ParticleFilterTester:
         """
         params = {**self.default_parameters, **overrides}
 
-        save_path = None
-        if self.save_dir:
-            safe_label = label.replace("/", "_").replace(" ", "_")
-            save_path = f"{self.save_dir}/{safe_label}.png"
-
-        if seed is not None:
+        if self.save_dir and save_name:
+            save_path = f"{self.save_dir}/{save_name}.png"
+        else:
+            save_path = None
+            
+        if seed is None:
             np.random.seed(seed)
+        
 
-        stats = self.run_fn(save_path=save_path, **params)
+        stats = self.run_fn(plot_title=plot_title, save_path=save_path, **params)
 
-        record = {"label": label, **overrides, **stats}
+        record = {"label": plot_title, **overrides, **stats}
         self.results.append(record)
         return record
 
@@ -289,12 +294,12 @@ class ParticleFilterTester:
         else:
             raise ValueError("mode must be 'zip' or 'grid'")
 
-        for combo in combos:
+        for i, combo in enumerate(combos):
             overrides = dict(zip(names, combo))
-            label = "_".join(f"{k}={v}" for k, v in overrides.items())
-            print(f"Running test: {label}")
+            plot_title = "_".join(f"{k}={v}" for k, v in overrides.items())
+            print(f"Running test: {plot_title}")
 
-            self.run(label=label, seed=seed, **overrides)
+            self.run(plot_title=plot_title, save_name=f"run_{i}", seed=seed, **overrides)
 
         return self.results_df()
 

@@ -3,7 +3,10 @@ __pycache__
 results/
 *.gif
 
-.vscode/*
 _notes.txt
 
 .venv
+
+immortalized
+.vscode/settings.json
+.vscode

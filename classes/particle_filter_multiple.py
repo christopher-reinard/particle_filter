@@ -2,6 +2,7 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 from typing import List, Tuple, Literal, Optional, Dict
 from .observation import TransitionModel, ObservationModel
+from datetime import datetime
 
 class Particle:
     """
@@ -207,6 +208,7 @@ class MultiObjectParticleFilter:
                  transition_model: TransitionModel,
                  observation_model: ObservationModel,
                  neighbor_assignment: Literal["GreedyKNN", "Hungarian"] = "Hungarian",
+                 distance_metric: Literal["MahalanobisFilter", "MahalanobisObs", "Euclidean", "LogLikelihood"] = "Euclidean",
                  init_generator: Literal["PseudoRandom", "Sobol", "LHS"] = "PseudoRandom",
                  ess_resample_threshold: float = 0.5, # Controls when to resample based on effective sample size (ESS)
                  use_velocity_likelihood: bool = True,
@@ -232,7 +234,7 @@ class MultiObjectParticleFilter:
         self.prev_observations = []
         self.prev_estimates = []
 
-        if neighbor_assignment == "GreedyKNN":
+        if neighbor_assignment == "Greedy":
             self._assign = self._assign_greedy_knn
         elif neighbor_assignment == "Hungarian":
             self._assign = self._assign_hungarian
@@ -241,24 +243,88 @@ class MultiObjectParticleFilter:
                 f"Unknown neighbor_assignment {neighbor_assignment!r}; "
                 f"expected 'GreedyKNN' or 'Hungarian'"
             )
+        
+        if distance_metric == "MahalanobisFilter":
+            self._build_cost_matrix = self._build_mahalanobis_filter_cost_matrix
+        elif distance_metric == "MahalanobisObs":
+            self._build_cost_matrix = self._build_mahalanobis_observation_cost_matrix
+        elif distance_metric == "Euclidean":
+            self._build_cost_matrix = self._build_distance_cost_matrix
+        elif distance_metric == "LogLikelihood":
+            self._build_cost_matrix = self._build_log_likelihood_cost_matrix
 
-    def _build_cost_matrix(self,
+    # Build the cost matrix based on the distance between the predicted Gaussian from the filter and the observation
+    def _build_distance_cost_matrix(self, 
+                                    predicted_means: np.ndarray, 
+                                    predicted_covs: np.ndarray, # unused for Euclidean distance
+                                    observations: List[np.ndarray]) -> np.ndarray:
+        """
+        Builds a (n_balls x n_obs) cost matrix using Euclidean distance.
+        cost[i, j] = ||obs_j - mean_i||
+        """
+        n_obs = len(observations)
+        obs_dim = len(observations[0])
+        cost = np.zeros((self.n_balls, n_obs))
+
+        for i in range(self.n_balls):
+            mu = predicted_means[i, :obs_dim]  # slice to obs dimension
+            for j, obs in enumerate(observations):
+                diff = obs - mu
+                cost[i, j] = np.linalg.norm(diff)
+
+        return cost
+
+    def _build_log_likelihood_cost_matrix(
+        self,
+        predicted_means: np.ndarray,
+        predicted_covs: np.ndarray,
+        observations: list[np.ndarray],
+    ) -> np.ndarray:
+
+        n_tracks = self.n_balls
+        n_obs = n_tracks
+
+        R = (
+            self.filters[0]
+            .observation_model
+            .measurement_noise
+            * np.eye(2)
+        )
+
+        C = np.zeros((n_tracks, n_obs))
+
+        for i in range(n_tracks):
+            mu_xy = predicted_means[i][:2]
+
+            P_xy = predicted_covs[i][:2, :2]
+
+            S = P_xy + R
+            S_inv = np.linalg.inv(S)
+
+            _, logdet = np.linalg.slogdet(S)
+
+            for j in range(n_obs):
+
+                innovation = observations[j] - mu_xy
+
+                mahal = innovation.T @ S_inv @ innovation
+
+                C[i, j] = 0.5 * (mahal + logdet)
+
+        return C
+
+    # Build the cost matrix based on the distance between the predicted Gaussian from the filter and the observation
+    def _build_mahalanobis_filter_cost_matrix(self,
                            predicted_means: np.ndarray,
                            predicted_covs: np.ndarray,
                            observations: List[np.ndarray]) -> np.ndarray:
         """
         Builds a (n_balls x n_obs) cost matrix using Mahalanobis distance.
 
-        Using the full 4D predicted covariance means two balls crossing at the
-        same (x,y) position are still distinguishable by their velocity components,
-        so the assignment survives trajectory crossings.
-
         cost[i, j] = sqrt( (obs_j - mean_i)^T @ inv(cov_i) @ (obs_j - mean_i) )
 
-        If the observation is lower-dimensional than the state (e.g. only x,y),
-        we slice the relevant rows/columns from the covariance.
         """
-        n_obs = len(observations)
+        n_obs = self.n_balls
         obs_dim = len(observations[0])
         cost = np.zeros((self.n_balls, n_obs))
 
@@ -271,6 +337,33 @@ class MultiObjectParticleFilter:
                 diff = obs - mu
                 cost[i, j] = np.sqrt(diff @ inv_cov @ diff)
 
+        return cost
+    
+    # Build the cost matrix based on the distance between the Gaussian from Observation and the predicted mean from the filter
+    def _build_mahalanobis_observation_cost_matrix(
+            self,
+            predicted_means: np.ndarray,
+            predicted_covs: np.ndarray, # Unused for this function
+            observations: List[np.ndarray]) -> np.ndarray:
+        """
+        Builds a (n_balls x n_obs) cost matrix using Mahalanobis distance.
+        The Gaussian is made from the observation, the distance is computed from the predicted mean to the observation Gaussian.
+
+        cost[i, j] = sqrt( (obs_j - mean_i)^T @ inv(cov_i) @ (obs_j - mean_i) )
+
+        """
+        # Since all the observations are assumed to have the same noise covariance, 
+        # we can use the observation model's measurement noise for all of them.
+        n_obs = self.n_balls
+        noise = self.filters[0].observation_model.measurement_noise
+        noise_cov = noise * np.eye(2)
+        inv_obs_cov = np.linalg.inv(noise_cov + np.eye(2) * 1e-6)
+        cost = np.zeros((self.n_balls, n_obs))
+
+        for j, obs in enumerate(observations):
+            for i in range(self.n_balls):
+                diff = predicted_means[i, :2] - obs # Calculate the difference between mean and the observation
+                cost[i, j] = np.sqrt(diff @ inv_obs_cov @ diff)
         return cost
 
     def _assign_greedy_knn(self,
@@ -311,7 +404,6 @@ class MultiObjectParticleFilter:
 
         if self.n_balls > 1:
             cost = self._build_cost_matrix(predicted_means, predicted_covs, observations)
-            print(cost)
 
             # linear_sum_assignment minimizes total cost
             filter_indices, obs_indices = linear_sum_assignment(cost)
@@ -353,7 +445,8 @@ class MultiObjectParticleFilter:
         predicted_covs = np.array([np.eye(4) * 1e6 for _ in range(self.n_balls)])  # wide prior
 
         for t, observation in enumerate(observations):
-
+            
+            start_time = datetime.now()
             # --- Step 1: Propagate all filters ---
             for f in self.filters:
                 f.propagate()
@@ -396,7 +489,8 @@ class MultiObjectParticleFilter:
                 covs.append(cov)
                 predicted_means[i] = mean
                 predicted_covs[i] = cov
-
+            end_time = datetime.now()
+            elapsed_time = (end_time - start_time).total_seconds()
             if log_pf:
                 print(f"t={t}  assignment={assignment}")
                 for i, (m, _) in enumerate(zip(estimates, covs)):
@@ -412,7 +506,8 @@ class MultiObjectParticleFilter:
                 "estimate": np.array([e.copy() for e in estimates]),        # shape (n_balls, 4)
                 "estimate_covs": [c.copy() for c in covs],                  # List of (4,4)
                 "assignment": assignment,                                    # Dict[filter_idx -> obs_idx]
-                "particle_states": np.vstack([f.particle_set.states().copy() for f in self.filters])  # shape (n_balls*N,4)
+                "particle_states": np.vstack([f.particle_set.states().copy() for f in self.filters]),  # shape (n_balls*N,4)
+                "elapsed_time": elapsed_time
             })
 
         return history
