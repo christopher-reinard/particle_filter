@@ -122,7 +122,7 @@ def run_one_test(step_size,
         # print("Animating particle filter...")
         # animate_particle_filter(true_trajectory, history, save_path=save_path.replace(".png", ".gif"))
 
-    return get_stats(true_trajectory, observations, history, num_steps, average_time)
+    return get_stats(true_trajectory, observations, history, num_steps, average_time, measurement_noise, confidence=0.95)
 
 """
 ParticleFilterTester: a small experiment-runner class built around your

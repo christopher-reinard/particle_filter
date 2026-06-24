@@ -349,7 +349,7 @@ class MultiObjectParticleFilter:
         return cost
     
     # Build the cost matrix based on the distance between the Gaussian from Observation and the predicted mean from the filter
-    # Functionally identical to euclidean?
+    # Functionally identical to euclidean, since the observation covariance is constant and does not affect the assignment.
     def _build_mahalanobis_observation_cost_matrix(
             self,
             predicted_means: np.ndarray,
@@ -417,9 +417,14 @@ class MultiObjectParticleFilter:
 
             # linear_sum_assignment minimizes total cost
             filter_indices, obs_indices = linear_sum_assignment(cost)
-
             assignment = {}
             for f_idx, o_idx in zip(filter_indices, obs_indices):
+                cost_value = cost[f_idx, o_idx]
+                # If the cost is too high, we consider this filter to be unmatched
+
+                # if cost_value > 20:  # arbitrary threshold for "too high"
+                #     print("Warning: High assignment cost, filter {} assigned to observation {} with cost {:.2f}".format(f_idx, o_idx, cost_value))
+                #     continue
                 assignment[f_idx] = o_idx
         else:
             assignment = {0: 0}
