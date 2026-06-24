@@ -24,6 +24,7 @@ def plot_particles_at_time(true_trajectory, history, time):
 
 def plot_particle_filter_step(true_trajectory, observations, history, time, num_steps=None, save_path=None, title=None, bins=80):
     """Plot one particle-filter time step with trajectory context and particle diagnostics."""
+    import os # added to support the os.path.splitext call at the end
     time = int(time)
     if time < 0 or time >= len(history):
         raise IndexError(f"time must be in [0, {len(history) - 1}], got {time}")
@@ -171,6 +172,28 @@ def plot_particle_filter_step(true_trajectory, observations, history, time, num_
             label="Estimate t",
             zorder=9,
         )
+        
+        # --- NEW CODE: Add velocity direction arrows ---
+        if prev_time is not None:
+            # Calculate empirical velocity (dx, dy)
+            dx = current_estimate[:, 0] - previous_estimate[:, 0]
+            dy = current_estimate[:, 1] - previous_estimate[:, 1]
+            
+            ax.quiver(
+                current_estimate[:, 0],
+                current_estimate[:, 1],
+                dx,
+                dy,
+                color="orange",
+                angles="xy",
+                scale_units="xy",
+                scale=1, # 1 makes the arrow exactly the length of the step displacement
+                width=0.004,
+                zorder=10,
+                label="Est. Direction"
+            )
+        # -----------------------------------------------
+
         if current_observation is not None:
             ax.scatter(
                 current_observation[:, 0],
@@ -332,13 +355,20 @@ def plot_particle_filter_step(true_trajectory, observations, history, time, num_
         ax.set_xlabel("X Position")
         ax.set_ylabel("Y Position")
         ax.grid(True, linestyle=":", alpha=0.55)
-        ax.legend(fontsize=8, loc="best")
+        
+        # Deduplicate legend items (so we don't get multiple 'Est. Direction' entries if tracking multiple objects)
+        handles, labels = ax.get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        ax.legend(by_label.values(), by_label.keys(), fontsize=8, loc="best")
 
     ax_density.set_xlim(*x_limits)
     ax_density.set_ylim(*y_limits)
     ax_density.set_xlabel("X Position")
     ax_density.set_ylabel("Y Position")
-    ax_density.legend(fontsize=8, loc="best")
+    
+    handles, labels = ax_density.get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    ax_density.legend(by_label.values(), by_label.keys(), fontsize=8, loc="best")
 
     for fig in figs:
         fig.tight_layout()
