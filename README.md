@@ -26,7 +26,11 @@ Below are quick explanations of the purpose of each file in the classes director
 ### Transition_Model
 
 - Moves the states to new states
--
+- Physics model given
+- Noise model wasnt given:
+  - First Idea: Applying the same process_noise on all coordinates ([x,y,vx,vy])
+    - Problem: Not Physical correct. Dimensionalities have different units. Noise should be approproate in respect to all Coordinates
+  - Later Solution: 'Continuous-Time White Noise Acceleration model'. Process_noise mutliplied according to physics on each coordinate.
 
 ## particle_filter_multiple.py (Christopher)
 
