@@ -1,6 +1,8 @@
 # Particle Filter for Ball position prediction
 
-Solution of ball assignment problem for Portfolio 2 of **Reasoning and Decision-Making under Uncertainty**
+Solution of undistinguishable ball assignment problem for Portfolio 2 of **Reasoning and Decision-Making under Uncertainty**
+
+<img src="img/ParticleFilter_2Balls_LabelSwapping.jpeg">
 
 ## Author: Peter Möhle, Christopher Reinard Kohar
 
