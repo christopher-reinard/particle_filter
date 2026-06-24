@@ -22,19 +22,19 @@ class ParticleSet:
     def __init__(self, particles: List[Particle]) -> None:
         self.particles = particles
 
-    def normalize_weights(self) -> None:
+    def normalize_weights(self) -> bool:
         """
         Normalizes weights to sum to 1.0.
         w_t^i = w_t^i / sum_j(w_t^j)
         """
         total_weight = sum(p.weight for p in self.particles)
-        if total_weight < 1e-5:
-            print(f"Warning: normalizing near-zero total weight {total_weight:.2e} — reseeding uniformly")
-            for p in self.particles:
-                p.weight = 1.0 / len(self.particles)
+        if total_weight < 1e-300:
+            # print(f"Warning: normalizing near-zero total weight {total_weight:.2e} — reseeding uniformly")
+            return True  # signal to reseed
         else:
             for p in self.particles:
                 p.weight /= total_weight
+            return False
 
     def states(self) -> np.ndarray:
         """Shape: (num_particles, 4)"""
@@ -155,7 +155,6 @@ class SingleBallParticleFilter:
             estimated_velocity = (observation - predicted_position[:2]) / self.transition_model.delta_t
         else:
             estimated_velocity = None  # first frame, no prior estimate yet
-
         for p in self.particle_set.particles:
             position_likelihood = self.observation_model.likelihood(observation, p.state)
 
@@ -171,7 +170,26 @@ class SingleBallParticleFilter:
                     p.weight = position_likelihood
             else:
                 p.weight = position_likelihood
-        self.particle_set.normalize_weights()
+        should_resample = self.particle_set.normalize_weights()
+
+        if should_resample:
+            velocity_lows = np.array([b[0] for b in self.bounds[2:]])
+            velocity_highs = np.array([b[1] for b in self.bounds[2:]])
+            print("Warning: weights degenerate, resampling based on current observation")
+            # If weights are degenerate, reinitialize the particle set again based on the current observation
+            new_particles = []
+            for _ in range(self.num_particles):
+                # Sample the position from the observation with added noise
+                new_position = observation.copy()
+                noise = np.random.normal(0, self.observation_model.measurement_noise, size=new_position.shape)
+                new_position += noise
+
+                # Sample a new velocity uniformly from the bounds
+                new_velocity = np.random.uniform(velocity_lows, velocity_highs)
+                new_state = np.concatenate([new_position, new_velocity])
+
+                new_particles.append(Particle(state=new_state, weight=1.0 / self.num_particles))
+            self.particle_set = ParticleSet(new_particles)
 
     
     def estimate(self) -> Tuple[np.ndarray, np.ndarray]:
@@ -280,10 +298,8 @@ class MultiObjectParticleFilter:
         predicted_covs: np.ndarray,
         observations: list[np.ndarray],
     ) -> np.ndarray:
-
         n_tracks = self.n_balls
         n_obs = n_tracks
-
         R = (
             self.filters[0]
             .observation_model
@@ -292,23 +308,15 @@ class MultiObjectParticleFilter:
         )
 
         C = np.zeros((n_tracks, n_obs))
-
         for i in range(n_tracks):
             mu_xy = predicted_means[i][:2]
-
             P_xy = predicted_covs[i][:2, :2]
-
             S = P_xy + R
             S_inv = np.linalg.inv(S)
-
             _, logdet = np.linalg.slogdet(S)
-
             for j in range(n_obs):
-
                 innovation = observations[j] - mu_xy
-
                 mahal = innovation.T @ S_inv @ innovation
-
                 C[i, j] = 0.5 * (mahal + logdet)
 
         return C
