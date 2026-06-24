@@ -109,9 +109,9 @@ class SingleBallParticleFilter:
             states = np.random.uniform(lows, highs, size=(self.num_particles, self.state_dim))
         elif self.init_generator in ["Sobol", "LHS"]:
             from scipy.stats import qmc
-            sampler = (qmc.Sobol(d=self.state_dim, scramble=True)
+            sampler = (qmc.Sobol(d=self.state_dim, scramble=True, seed=3)
                        if self.init_generator == "Sobol"
-                       else qmc.LatinHypercube(d=self.state_dim, scramble=True))
+                       else qmc.LatinHypercube(d=self.state_dim, scramble=True, seed=3))
             samples = sampler.random(n=self.num_particles)
             states = qmc.scale(samples, lows, highs)
         else:
@@ -205,15 +205,15 @@ class MultiObjectParticleFilter:
     """
     Tracks n_balls independently using one SingleBallParticleFilter per ball.
 
-    Assignment of observations to filters is solved optimally each frame using
-    the Hungarian algorithm on a Mahalanobis-distance cost matrix, making
-    crossing trajectories distinguishable by velocity even when positions coincide.
+    Assignment of observations to filters is solved each frame using
+    the Hungarian algorithm (scipy linear_sum_assignment) on the distance cost matrix.
+    Even though positions can swap, should not be a large issue
 
     Algorithm per frame:
         1. Propagate all filters
         2. Get predicted state from each filter
-        3. Build (n_balls x n_obs) Mahalanobis cost matrix
-        4. Hungarian algorithm → optimal 1-to-1 assignment
+        3. Build (n_balls x n_obs) distance cost matrix
+        4. Hungarian algorithm to assign observations to filters
         5. Evaluate each filter with its assigned observation
         6. Resample each filter
         7. Estimate and return
@@ -224,7 +224,7 @@ class MultiObjectParticleFilter:
                  state_bounds: List[Tuple[float, float]],
                  transition_model: TransitionModel,
                  observation_model: ObservationModel,
-                 neighbor_assignment: Literal["GreedyKNN", "Hungarian"] = "Hungarian",
+                 neighbor_assignment: Literal["Greedy", "Hungarian"] = "Hungarian",
                  distance_metric: Literal["MahalanobisFilter", "MahalanobisObs", "Euclidean", "LogLikelihood"] = "Euclidean",
                  init_generator: Literal["PseudoRandom", "Sobol", "LHS"] = "PseudoRandom",
                  ess_resample_threshold: float = 0.5, # Controls when to resample based on effective sample size (ESS)
@@ -235,6 +235,7 @@ class MultiObjectParticleFilter:
         self.n_balls = n_balls
         self.ess_threshold = ess_resample_threshold
 
+        # List of filters
         self.filters: List[SingleBallParticleFilter] = [
             SingleBallParticleFilter(
                 num_particles=num_particles,
@@ -258,7 +259,7 @@ class MultiObjectParticleFilter:
         else:
             raise ValueError(
                 f"Unknown neighbor_assignment {neighbor_assignment!r}; "
-                f"expected 'GreedyKNN' or 'Hungarian'"
+                f"expected 'Greedy' or 'Hungarian'"
             )
         
         if distance_metric == "MahalanobisFilter":
@@ -270,7 +271,7 @@ class MultiObjectParticleFilter:
         elif distance_metric == "LogLikelihood":
             self._build_cost_matrix = self._build_log_likelihood_cost_matrix
 
-    # Build the cost matrix based on the distance between the predicted Gaussian from the filter and the observation
+    # Build the cost matrix based on the euclidean distance between the predicted Gaussian from the filter and the observation
     def _build_distance_cost_matrix(self, 
                                     predicted_means: np.ndarray, 
                                     predicted_covs: np.ndarray, # unused for Euclidean distance
@@ -291,6 +292,7 @@ class MultiObjectParticleFilter:
 
         return cost
 
+    # Builds the cost matrix based on the log-likelihood of the observation + noise given the predicted Gaussian from the filter
     def _build_log_likelihood_cost_matrix(
         self,
         predicted_means: np.ndarray,
@@ -308,14 +310,14 @@ class MultiObjectParticleFilter:
 
         C = np.zeros((n_tracks, n_obs))
         for i in range(n_tracks):
-            mu_xy = predicted_means[i][:2]
-            P_xy = predicted_covs[i][:2, :2]
-            S = P_xy + R
-            S_inv = np.linalg.inv(S)
-            _, logdet = np.linalg.slogdet(S)
+            mu_xy = predicted_means[i][:2] # Predicted mean position (x,y)
+            P_xy = predicted_covs[i][:2, :2] # Predicted covariance for position (x,y)
+            S = P_xy + R # Sum of uncertainty from prediction and observation noise
+            S_inv = np.linalg.inv(S) # Inverse of the covariance matrix
+            _, logdet = np.linalg.slogdet(S) # Measure the Size of the uncertainty matrix (if there is more uncertainty, the logdet will be larger, and the cost will be higher)
             for j in range(n_obs):
-                innovation = observations[j] - mu_xy
-                mahal = innovation.T @ S_inv @ innovation
+                innovation = observations[j] - mu_xy # Difference between the observation and the predicted mean
+                mahal = innovation.T @ S_inv @ innovation # Mahalanobis distance
                 C[i, j] = 0.5 * (mahal + logdet)
 
         return C
@@ -347,6 +349,7 @@ class MultiObjectParticleFilter:
         return cost
     
     # Build the cost matrix based on the distance between the Gaussian from Observation and the predicted mean from the filter
+    # Functionally identical to euclidean?
     def _build_mahalanobis_observation_cost_matrix(
             self,
             predicted_means: np.ndarray,

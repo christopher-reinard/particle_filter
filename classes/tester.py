@@ -232,6 +232,7 @@ class ParticleFilterTester:
         head-to-head comparison rather than two independent random runs.
         Stores and returns a flat record: {"label", **overrides, **stats}.
         """
+
         params = {**self.default_parameters, **overrides}
 
         if self.save_dir and save_name:
@@ -239,9 +240,8 @@ class ParticleFilterTester:
         else:
             save_path = None
             
-        if seed is None:
+        if seed is not None:
             np.random.seed(seed)
-        
 
         stats = self.run_fn(plot_title=plot_title, save_path=save_path, **params)
 

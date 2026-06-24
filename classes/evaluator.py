@@ -113,19 +113,21 @@ def get_stats(true_trajectory, observations, history, num_steps, average_time):
     obs_mean_error = np.mean(all_obs_dists)
 
     mse_improvement = 100 * (obs_rmse - est_rmse) / obs_rmse if obs_rmse > 0 else float('inf')
+    rmse_improvement = 100 * (obs_rmse - est_rmse) / obs_rmse if obs_rmse > 0 else float('inf')
 
     output = {
         'est_mean_error': est_mean_error,
         'est_rmse': est_rmse,
         'obs_mean_error': obs_mean_error,
         'obs_rmse': obs_rmse,
-        'improvement': mse_improvement,
+        'mse_improvement': mse_improvement,
+        "rmse_improvement": rmse_improvement,
         'raw': {
             "true_trajectory": true_trajectory,
             "observations": observations,
             "history": history,
             "num_steps": num_steps
         },
-        "average_time": average_time
+        "average_time": average_time,
     }
     return output

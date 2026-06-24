@@ -135,7 +135,7 @@ class ParticleFilter:
           states = np.random.uniform(lows, highs, size=(self.num_particles, self.state_dim))
         elif self.init_generator in ["Sobol", "LHS"]:
           from scipy.stats import qmc
-          sampler = qmc.Sobol(d=self.state_dim, scramble=True) if self.init_generator == "Sobol" else qmc.LatinHypercube(d=self.state_dim, scramble=True)
+          sampler = qmc.Sobol(d=self.state_dim, scramble=True, seed=4) if self.init_generator == "Sobol" else qmc.LatinHypercube(d=self.state_dim, scramble=True, seed=4)
 
           samples = sampler.random(n=self.num_particles)
           states = qmc.scale(samples, lows, highs)

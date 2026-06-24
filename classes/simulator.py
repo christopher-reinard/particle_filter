@@ -1,7 +1,5 @@
 import numpy as np
 
-np.random.seed(0)
-
 # Generates the Simulations and Observations for the Particle Filter
 
 def generate_random_balls(num_balls, state_bounds):
