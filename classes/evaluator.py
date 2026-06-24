@@ -86,7 +86,7 @@ def get_distance_one_point(true_states, observations, estimates, gate=None):
         'est_assign': (est_r, est_c) if est_r is not None else None
     }
 
-def get_stats(true_trajectory, observations, history, num_steps):
+def get_stats(true_trajectory, observations, history, num_steps, average_time):
     all_obs_dists = []
     all_est_dists = []
 
@@ -114,7 +114,6 @@ def get_stats(true_trajectory, observations, history, num_steps):
 
     mse_improvement = 100 * (obs_rmse - est_rmse) / obs_rmse if obs_rmse > 0 else float('inf')
 
-
     output = {
         'est_mean_error': est_mean_error,
         'est_rmse': est_rmse,
@@ -126,6 +125,7 @@ def get_stats(true_trajectory, observations, history, num_steps):
             "observations": observations,
             "history": history,
             "num_steps": num_steps
-        }
+        },
+        "average_time": average_time
     }
     return output

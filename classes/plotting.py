@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib import pyplot as plt
 from matplotlib import animation
 import numpy as np
+import os
 
 def plot_particles_at_time(true_trajectory, history, time):
     particles = history[time]["particle_states"][:, :2]

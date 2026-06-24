@@ -2,7 +2,6 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 from typing import List, Tuple, Literal, Optional, Dict
 from .observation import TransitionModel, ObservationModel
-from datetime import datetime
 
 class Particle:
     """
@@ -454,7 +453,6 @@ class MultiObjectParticleFilter:
 
         for t, observation in enumerate(observations):
             
-            start_time = datetime.now()
             # --- Step 1: Propagate all filters ---
             for f in self.filters:
                 f.propagate()
@@ -497,8 +495,6 @@ class MultiObjectParticleFilter:
                 covs.append(cov)
                 predicted_means[i] = mean
                 predicted_covs[i] = cov
-            end_time = datetime.now()
-            elapsed_time = (end_time - start_time).total_seconds()
             if log_pf:
                 print(f"t={t}  assignment={assignment}")
                 for i, (m, _) in enumerate(zip(estimates, covs)):
@@ -515,7 +511,6 @@ class MultiObjectParticleFilter:
                 "estimate_covs": [c.copy() for c in covs],                  # List of (4,4)
                 "assignment": assignment,                                    # Dict[filter_idx -> obs_idx]
                 "particle_states": np.vstack([f.particle_set.states().copy() for f in self.filters]),  # shape (n_balls*N,4)
-                "elapsed_time": elapsed_time
             })
 
         return history

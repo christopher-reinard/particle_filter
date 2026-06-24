@@ -4,6 +4,8 @@ from classes.observation import TransitionModel, ObservationModel
 from classes.simulator import create_ground_truth, generate_random_balls, create_ground_truth_n_balls
 from classes.evaluator import get_stats
 from classes.plotting import animate_particle_filter, plot_sim_n_balls_point_prediction
+from datetime import datetime
+
 
 import numpy as np
 from typing import Literal
@@ -80,24 +82,29 @@ def run_one_test(step_size,
             min_velocity_likelihood=min_velocity_likelihood
         )
 
+        start = datetime.now()
         history = pf.run(observations, logs=logs) # Don't log for the test, we just want the final estimates
+        end = datetime.now()
+        average_time = (end-start).total_seconds() / num_steps
     
     elif model == "SingleParticleFilter":
         pf = ParticleFilter(
-            num_particles=num_particles,
+            num_particles=num_particles * n_objects,
             state_bounds=state_bounds,
             transition_model=transition_model,
             observation_model=observation_model,
             init_generator=init_generator,
             roughening_noise=0.0
         )
-        
+        start = datetime.now()
         history = pf.run(
             observations=observations, 
             n_objects=n_objects,
             change_resample_order=True,
             logs=logs
         )
+        end = datetime.now()
+        average_time = (end-start).total_seconds() / num_steps
     else:
         raise ValueError("Unknown Model-type")
    
@@ -115,7 +122,7 @@ def run_one_test(step_size,
         # print("Animating particle filter...")
         # animate_particle_filter(true_trajectory, history, save_path=save_path.replace(".png", ".gif"))
 
-    return get_stats(true_trajectory, observations, history, num_steps)
+    return get_stats(true_trajectory, observations, history, num_steps, average_time)
 
 """
 ParticleFilterTester: a small experiment-runner class built around your
