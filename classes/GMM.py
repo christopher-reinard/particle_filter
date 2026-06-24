@@ -212,8 +212,9 @@ class GaussianMixtureModel:
             # Check whether convergence is stable
             log_likelihood = np.sum(np.log(sum_weighted_probs + 1e-10))
             self.likelihoods.append(log_likelihood)
-            if abs(log_likelihood - prev_log_likelihood) < stable_delta and verbose:
-                print(f"Early Stopping after {i} iterations with delta: {abs(log_likelihood - prev_log_likelihood)}")
+            if abs(log_likelihood - prev_log_likelihood) < stable_delta:
+                if verbose:
+                    print(f"Early Stopping after {i} iterations with delta: {abs(log_likelihood - prev_log_likelihood)}")
                 is_early_stopping = True
                 break
             prev_log_likelihood = log_likelihood
