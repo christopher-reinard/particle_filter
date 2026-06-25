@@ -1,6 +1,119 @@
+"""
+Evaluator Module for tracking performance between Estimates and Observations against Ground Truth.
+The Commented out code are all the old versions of the evaluator code, which are kept for reference and comparison.
+
+The current version is the simplest version of the evaluator. 
+1. Take the euclidean distance between the true and the estimated/observed positions, 
+2. Assign the estimated/observed positions to the true positions using the Hungarian algorithm (linear_sum_assignment) to minimize the total distance.
+3. Calculates the mean, mse and rmse of the distances.
+
+Limitation to this Approach:
+- This could also not be the true observation or estimation error: 
+    - if paths collide and the observations are somehow "lucky" and get assigned to the wrong true position.
+
+Old Version 1: Euclidean Distance with Gating (Scrapped because it was not necessary to use gating, and AI suggested "Better" solution)
+
+Old Version 2: Mahalanobis Distance with Gating (Scrapped because it was again not necessary to use gating, 
+                Additionally, the distance calculation is wrong since the filter itself has its own distribution.
+                Another point was that if the filter is more uncertain, the loss would be lower
+                Finally, it's just too complex for the task at hand, so uncertainties are not taken into consideration
+
+"""
+
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
 import numpy as np
+
+
+def _assign_and_distances(true_pos, points):
+    """
+    Assign points to true_pos using Hungarian algorithm (min Euclidean cost).
+    Returns distances aligned to true_pos order, NaN for unmatched targets.
+    """
+    n = true_pos.shape[0]
+
+    if points is None:
+        return np.full(n, np.nan)
+
+    pts = np.asarray(points)
+    if pts.ndim == 1:
+        pts = pts.reshape(1, -1)
+    pts = pts[:, :2]
+
+    cost = cdist(true_pos, pts, metric='euclidean')
+    row_ind, col_ind = linear_sum_assignment(cost)
+
+    dists = np.full(n, np.nan)
+    for r, c in zip(row_ind, col_ind):
+        dists[r] = cost[r, c]
+
+    return dists
+
+
+def get_stats(true_trajectory, observations, history, num_steps, average_time):
+    """
+    Aggregate per-frame Euclidean assignment errors over the full trajectory.
+
+    Args:
+        true_trajectory:  list of (n, 4) or (n, 2) arrays
+        observations:     list of (m, 2) arrays or Nones
+        history:          list of dicts with key 'estimate'
+        num_steps:        int
+        average_time:     float, seconds per step
+
+    Returns dict with MAE, MSE, RMSE for both observations and estimates.
+    """
+    all_obs_dists = []
+    all_est_dists = []
+
+    for t in range(num_steps):
+        true_pos = np.asarray(true_trajectory[t])[:, :2]
+        obs      = observations[t]
+        est      = history[t]['estimate']
+
+        obs_d = _assign_and_distances(true_pos, obs)
+        est_d = _assign_and_distances(true_pos, est)
+
+        # Only score frames where BOTH have a valid assignment for the same target
+        valid = ~np.isnan(obs_d) & ~np.isnan(est_d)
+        all_obs_dists.extend(obs_d[valid])
+        all_est_dists.extend(est_d[valid])
+
+    obs_d = np.asarray(all_obs_dists)
+    est_d = np.asarray(all_est_dists)
+
+    def metrics(arr):
+        return {
+            'mae':  float(np.mean(arr)), # Mean Error 
+            'mse':  float(np.mean(arr ** 2)), # Mean Squared Error (in squared units)
+            'rmse': float(np.sqrt(np.mean(arr ** 2))), # MSE error but in the same units as the original data
+        }
+
+    obs_metrics = metrics(obs_d)
+    est_metrics = metrics(est_d)
+
+    rmse_improvement = 100 * (obs_metrics['rmse'] - est_metrics['rmse']) / obs_metrics['rmse']
+    mse_improvement  = 100 * (obs_metrics['mse']  - est_metrics['mse'])  / obs_metrics['mse']
+    mae_improvement  = 100 * (obs_metrics['mae']  - est_metrics['mae'])  / obs_metrics['mae']
+
+    return {
+        'obs':  obs_metrics,
+        'est':  est_metrics,
+        'rmse_improvement': rmse_improvement,
+        'mse_improvement':  mse_improvement,
+        'mae_improvement':  mae_improvement,
+        'average_time': average_time,
+        'raw': {
+            'true_trajectory': true_trajectory,
+            'observations':    observations,
+            'history':         history,
+            'num_steps':       num_steps,
+        }
+    }
+
+# from scipy.optimize import linear_sum_assignment
+# from scipy.spatial.distance import cdist
+# import numpy as np
 
 # Old evaluator code (commented out) for reference.
 # Computes the cost matrix 
@@ -330,93 +443,3 @@ import numpy as np
 #     }
 
 # Begin of Evaluator 3
-from scipy.optimize import linear_sum_assignment
-from scipy.spatial.distance import cdist
-import numpy as np
-
-
-def _assign_and_distances(true_pos, points):
-    """
-    Assign points to true_pos using Hungarian algorithm (min Euclidean cost).
-    Returns distances aligned to true_pos order, NaN for unmatched targets.
-    """
-    n = true_pos.shape[0]
-
-    if points is None:
-        return np.full(n, np.nan)
-
-    pts = np.asarray(points)
-    if pts.ndim == 1:
-        pts = pts.reshape(1, -1)
-    pts = pts[:, :2]
-
-    cost = cdist(true_pos, pts, metric='euclidean')
-    row_ind, col_ind = linear_sum_assignment(cost)
-
-    dists = np.full(n, np.nan)
-    for r, c in zip(row_ind, col_ind):
-        dists[r] = cost[r, c]
-
-    return dists
-
-
-def get_stats(true_trajectory, observations, history, num_steps, average_time):
-    """
-    Aggregate per-frame Euclidean assignment errors over the full trajectory.
-
-    Args:
-        true_trajectory:  list of (n, 4) or (n, 2) arrays
-        observations:     list of (m, 2) arrays or Nones
-        history:          list of dicts with key 'estimate'
-        num_steps:        int
-        average_time:     float, seconds per step
-
-    Returns dict with MAE, MSE, RMSE for both observations and estimates.
-    """
-    all_obs_dists = []
-    all_est_dists = []
-
-    for t in range(num_steps):
-        true_pos = np.asarray(true_trajectory[t])[:, :2]
-        obs      = observations[t]
-        est      = history[t]['estimate']
-
-        obs_d = _assign_and_distances(true_pos, obs)
-        est_d = _assign_and_distances(true_pos, est)
-
-        # Only score frames where BOTH have a valid assignment for the same target
-        valid = ~np.isnan(obs_d) & ~np.isnan(est_d)
-        all_obs_dists.extend(obs_d[valid])
-        all_est_dists.extend(est_d[valid])
-
-    obs_d = np.asarray(all_obs_dists)
-    est_d = np.asarray(all_est_dists)
-
-    def metrics(arr):
-        return {
-            'mae':  float(np.mean(arr)), # Mean Error 
-            'mse':  float(np.mean(arr ** 2)), # Mean Squared Error (in squared units)
-            'rmse': float(np.sqrt(np.mean(arr ** 2))), # MSE error but in the same units as the original data
-        }
-
-    obs_metrics = metrics(obs_d)
-    est_metrics = metrics(est_d)
-
-    rmse_improvement = 100 * (obs_metrics['rmse'] - est_metrics['rmse']) / obs_metrics['rmse']
-    mse_improvement  = 100 * (obs_metrics['mse']  - est_metrics['mse'])  / obs_metrics['mse']
-    mae_improvement  = 100 * (obs_metrics['mae']  - est_metrics['mae'])  / obs_metrics['mae']
-
-    return {
-        'obs':  obs_metrics,
-        'est':  est_metrics,
-        'rmse_improvement': rmse_improvement,
-        'mse_improvement':  mse_improvement,
-        'mae_improvement':  mae_improvement,
-        'average_time': average_time,
-        'raw': {
-            'true_trajectory': true_trajectory,
-            'observations':    observations,
-            'history':         history,
-            'num_steps':       num_steps,
-        }
-    }

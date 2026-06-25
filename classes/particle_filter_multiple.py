@@ -1,3 +1,32 @@
+"""
+Implements a multi-particle filter for tracking multiple balls in 2D space, each with a 4D state (x, y, vx, vy).
+The filter uses a set of SingleBallParticleFilter instances, one per ball, and assigns observations
+to filters using either a greedy nearest-neighbor approach or the Hungarian Algorithm.
+
+When using one filter per ball, the problem now becomes an Assignment problem (which observations are we giving to which particles)
+Therefore, a "cost matrix" needs to be built that compares the distances between each predicted ball position and the observations before evaluation.
+This distance metric can be Euclidean, Mahalanobis distance, or a LogLikelihood distance.
+
+Euclidean: Basic Distance between each points
+Mahalanobis: Distance between the predicted Gaussian from the filter and the observation, or vice versa.
+LogLikelihood: Combines the uncertainty of the predicted Gaussian and the measurement noise into one uncertainty covariance
+                Takes the Mahalanobis distance between the mean and the observation with this noise covariance
+
+                Also adds a penalize term based on the logarithm of the determinant, which increases when filter is uncertain, 
+                and decreases when the filter is more certain.
+
+
+No improvement is seen when using the more advanced distance metrics, so Euclidean is the default.
+
+To assign observations to filters after obtaining the cost matrix, the Hungarian algorithm is used to minimize the total assignment cost.
+
+As there are more balls, the error in the assignment can increase, especially when balls are close together.
+
+Possible ideas given more time:
+A more advanced assignment algorithm could be used that takes into account past observations and current states
+rather than the current frame
+"""
+
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 from typing import List, Tuple, Literal, Optional, Dict
