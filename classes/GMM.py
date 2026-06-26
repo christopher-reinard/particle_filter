@@ -222,6 +222,37 @@ class GaussianMixtureModel:
         if not is_early_stopping and verbose:
           print(f"Fitting Model finished after {max_iter} iterations. Delta {abs(log_likelihood - prev_log_likelihood)}")
 
+    def predict(self, X):
+        """Assigns each sample in X to the most likely cluster component."""
+        weighted_probs = np.zeros((X.shape[0], self.n_components))
+
+        for n in range(self.n_components):
+            dist = NormalDistribution(engine, mean=self.means[n], cov=self.covariances[n])
+            weighted_probs[:, n] = self.weights[n] * dist.pdf(X)
+        return np.argmax(weighted_probs, axis=1)
+    
+    def compute_log_likelihood(self, X):
+        """
+        Computes the total log-likelihood of the dataset X 
+        given the current GMM parameters.
+        """
+        n_samples = X.shape[0]
+        weighted_probs = np.zeros((n_samples, self.n_components))
+        
+        # 1. Calculate weighted probability for each component
+        for n in range(self.n_components):
+            dist = NormalDistribution(engine, mean=self.means[n], cov=self.covariances[n])
+            # p(x) = sum_k [ pi_k * N(x | mu_k, Sigma_k) ]
+            weighted_probs[:, n] = self.weights[n] * dist.pdf(X)
+            
+        # 2. Sum over components to get p(x_i)
+        total_probs = weighted_probs.sum(axis=1)
+        
+        # 3. Take the log and sum over all samples
+        # We add a small epsilon to avoid log(0)
+        log_likelihood = np.sum(np.log(total_probs + 1e-15))
+        
+        return log_likelihood
 
 
 class KMeans:

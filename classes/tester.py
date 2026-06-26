@@ -1,4 +1,4 @@
-from classes.particle_filter import ParticleFilter
+from particle_filter import ParticleFilter
 from classes.particle_filter_multiple import MultiObjectParticleFilter
 from classes.observation import TransitionModel, ObservationModel
 from classes.simulator import create_ground_truth, generate_random_balls, create_ground_truth_n_balls
@@ -52,7 +52,9 @@ def run_one_test(step_size,
                 min_velocity_likelihood=0.01,
                 save_path=None,
                 plot_title=None,
+                change_resample_order=True,
                 model: Literal["MultiParticleFilter", "SingleParticleFilter"]="MultiParticleFilter",
+                clustering_method: Literal["distances", "gmm"] = "distances",
                 logs=[]):
     
     n_objects = len(true_states)
@@ -94,13 +96,13 @@ def run_one_test(step_size,
             transition_model=transition_model,
             observation_model=observation_model,
             init_generator=init_generator,
-            roughening_noise=0.0
+            clustering_method=clustering_method
         )
         start = datetime.now()
         history = pf.run(
             observations=observations, 
             n_objects=n_objects,
-            change_resample_order=True,
+            change_resample_order=change_resample_order,
             logs=logs
         )
         end = datetime.now()
@@ -122,7 +124,7 @@ def run_one_test(step_size,
         # print("Animating particle filter...")
         # animate_particle_filter(true_trajectory, history, save_path=save_path.replace(".png", ".gif"))
 
-    return get_stats(true_trajectory, observations, history, num_steps, average_time, measurement_noise, confidence=0.95)
+    return get_stats(true_trajectory, observations, history, num_steps, average_time)#, measurement_noise)#, confidence=0.95)
 
 """
 ParticleFilterTester: a small experiment-runner class built around your

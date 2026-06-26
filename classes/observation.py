@@ -30,7 +30,6 @@ class TransitionModel:
         # Pre-compute the deterministic bias term once: B @ a  shape (4,)
         self._bias = self.B @ self.a
 
-        # TEST
         self.a = np.array([0.0, -g])
         self._bias = np.array([0.0, -0.5 * g * dt**2, 0.0, -g * dt])
 
@@ -72,10 +71,6 @@ class TransitionModel:
         # Cholesky factor of process_cov for fast batch noise sampling
         #self._L = np.linalg.cholesky(self.process_cov)  # (4, 4)
 
-    # ------------------------------------------------------------------
-    # Scalar API (unchanged — still used by legacy callers)
-    # ------------------------------------------------------------------
-
     def propagate(self, state: np.ndarray, ignore_noise: bool = False) -> np.ndarray:
         """Apply physics to a single (4,) state."""
         predicted = self.A @ state + self._bias
@@ -90,6 +85,13 @@ class TransitionModel:
         residual = new_state - pred
         mahalanobis = -0.5 * (residual @ self.inv_process_cov @ residual)
         return self._log_normalizer + mahalanobis
+    
+    def propagate_covariance(self, cov: np.ndarray) -> np.ndarray:
+        """
+        Propagates the covariance matrix through the linear transition model.
+        Formula: A * Cov * A^T + Q
+        """
+        return self.A @ cov @ self.A.T + self.process_cov
 
 
 class ObservationModel:
@@ -109,14 +111,9 @@ class ObservationModel:
         self.use_evaluate_log_likelihood = False
 
         # Pre-compute Gaussian normalisation constant for the batch path:
-        #   p(o | mu) = 1/(2π σ²) * exp(-||o - mu||² / (2σ²))
         # stored so we don't recompute per call.
         self._inv_2sigma2 = 1.0 / (2.0 * measurement_noise)
         self._log_norm = -np.log(2.0 * np.pi * measurement_noise)  # for 2-D obs
-
-    # ------------------------------------------------------------------
-    # Scalar API (unchanged)
-    # ------------------------------------------------------------------
 
     def propagate(self, true_state: np.ndarray, ignore_noise: bool = False) -> np.ndarray:
         dim = 2
@@ -151,10 +148,6 @@ class ObservationModel:
         else:
             raise NotImplementedError("Observation array must be 1D or 2D.")
 
-    # ------------------------------------------------------------------
-    # Vectorised API — called by SingleBallParticleFilter.evaluate()
-    # ------------------------------------------------------------------
-
     def likelihood_batch(self, observation: np.ndarray, states: np.ndarray) -> np.ndarray:
         """
         Compute likelihood for all N particles against a single 1-D observation.
@@ -176,6 +169,7 @@ class ObservationModel:
         # (normalisation constant cancels after weight normalisation, but kept
         #  for correctness when comparing absolute likelihoods)
         return np.exp(-sq_dist * self._inv_2sigma2) + 1e-300  # avoid exact zeros
+    
 # class TransitionModel:
 #     """
 #     Transition-Model describing the underlying physics
