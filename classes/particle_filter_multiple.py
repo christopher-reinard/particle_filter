@@ -108,9 +108,9 @@ class SingleBallParticleFilter:
                  transition_model: TransitionModel,
                  observation_model: ObservationModel,
                  init_generator: Literal["PseudoRandom", "Sobol", "LHS"] = "PseudoRandom",
-                 use_velocity_likelihood: bool = False,
-                 velocity_sigma: float = 20.0,
-                 min_velocity_likelihood: float = 0.01
+                 use_velocity_likelihood: bool = False, # Unused
+                 velocity_sigma: float = 20.0, # Unused
+                 min_velocity_likelihood: float = 0.01 # Unused
                  ) -> None:
         
         self.num_particles = num_particles
@@ -177,9 +177,13 @@ class SingleBallParticleFilter:
         Step 4: Weight each particle by how well it explains this observation.
         w_t^i = p(o_t | s_t^i)
         """
+        # Velocity Likelihood idea: If we could estimate the velocity better, we could use it to remove particles with good position but bad velocity.
+
         use_velocity_likelihood = self.use_velocity_likelihood
 
         if predicted_position is not None:
+
+            # Estimate the velocity based on the difference between the observation and the predicted position (Does not help)
             estimated_velocity = (observation - predicted_position[:2]) / self.transition_model.delta_t
         else:
             estimated_velocity = None  # first frame, no prior estimate yet
