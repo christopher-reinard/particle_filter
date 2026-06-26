@@ -1,4 +1,4 @@
-from particle_filter import ParticleFilter
+from classes.particle_filter import ParticleFilter
 from classes.particle_filter_multiple import MultiObjectParticleFilter
 from classes.observation import TransitionModel, ObservationModel
 from classes.simulator import create_ground_truth, generate_random_balls, create_ground_truth_n_balls
@@ -95,15 +95,15 @@ def run_one_test(step_size,
             state_bounds=state_bounds,
             transition_model=transition_model,
             observation_model=observation_model,
-            init_generator=init_generator,
-            clustering_method=clustering_method
+            init_generator=init_generator
         )
         start = datetime.now()
         history = pf.run(
             observations=observations, 
             n_objects=n_objects,
             change_resample_order=change_resample_order,
-            logs=logs
+            logs=logs,
+            clustering_method=clustering_method
         )
         end = datetime.now()
         average_time = (end-start).total_seconds() / num_steps

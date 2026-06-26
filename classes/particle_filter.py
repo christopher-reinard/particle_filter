@@ -45,7 +45,10 @@ class ParticleSet:
         """
         total_weight = sum(p.weight for p in self.particles)
         if total_weight < 1e-5:
-            print("Normalizing weights sum of ", total_weight)
+            print(f"--> Weight collapse (sum: {total_weight}). Resetting to uniform weights.")
+            uniform_w = 1.0 / len(self.particles)
+            for p in self.particles:
+                p.weight = uniform_w
             
         for p in self.particles:
             p.weight /= (total_weight + 1e-15) # Safety buffer against division by zero
